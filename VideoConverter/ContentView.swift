@@ -1,24 +1,17 @@
-//
-//  ContentView.swift
-//  VideoConverter
-//
-//  Created by Gonzalo Aller on 15/04/2026.
-//
+// ContentView.swift
+// VideoConverter
 
 import SwiftUI
 
 struct ContentView: View {
     var body: some View {
-        VStack {
-            Image(systemName: "globe")
-                .imageScale(.large)
-                .foregroundStyle(.tint)
-            Text("Hello, world!")
-        }
-        .padding()
+        VideoListView()
     }
 }
 
 #Preview {
     ContentView()
+        .environment(VideoListViewModel(photoLibraryService: PhotoLibraryService()))
+        .environment(ConversionViewModel())
 }
+
