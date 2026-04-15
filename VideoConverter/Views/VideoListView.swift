@@ -206,8 +206,13 @@ struct VideoListView: View {
             ProgressView()
                 .controlSize(.large)
                 .tint(Color.accentColor)
-            Text("Scanning library…")
-                .foregroundStyle(.secondary)
+            if listVM.discoveredCount > 0 {
+                Text("Found \(listVM.discoveredCount) video\(listVM.discoveredCount == 1 ? "" : "s")…")
+                    .foregroundStyle(.secondary)
+            } else {
+                Text("Scanning library…")
+                    .foregroundStyle(.secondary)
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }

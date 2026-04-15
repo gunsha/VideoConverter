@@ -27,6 +27,7 @@ final class VideoListViewModel {
     // MARK: - State
     var videos: [VideoAsset] = []
     var isLoading = false
+    var discoveredCount: Int = 0
     var authorizationStatus: PHAuthorizationStatus = PHPhotoLibrary.authorizationStatus(for: .readWrite)
     var sortOrder: SortOrder = .date { didSet { applySortOrder() } }
     var selectedIDs: Set<String> = []
@@ -47,6 +48,7 @@ final class VideoListViewModel {
     func load() async {
         isLoading = true
         error = nil
+        discoveredCount = 0
 
         if authorizationStatus == .notDetermined {
             authorizationStatus = await photoLibraryService.requestAuthorization()
@@ -57,7 +59,11 @@ final class VideoListViewModel {
             return
         }
 
-        let fetched = await photoLibraryService.fetchNonHEVCVideos()
+        let fetched = await photoLibraryService.fetchNonHEVCVideos { [weak self] count in
+            Task { @MainActor [weak self] in
+                self?.discoveredCount = count
+            }
+        }
         videos = sorted(fetched, by: sortOrder)
         isLoading = false
     }

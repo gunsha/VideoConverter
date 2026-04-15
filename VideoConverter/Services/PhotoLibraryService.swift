@@ -30,7 +30,7 @@ final class PhotoLibraryService: NSObject, PHPhotoLibraryChangeObserver {
 
     // MARK: - Fetch non-HEVC videos
 
-    func fetchNonHEVCVideos() async -> [VideoAsset] {
+    func fetchNonHEVCVideos(progressHandler: (@Sendable (Int) -> Void)? = nil) async -> [VideoAsset] {
         let phAssets = await Task.detached {
             let fetchOptions = PHFetchOptions()
             fetchOptions.predicate = NSPredicate(format: "mediaType == %d", PHAssetMediaType.video.rawValue)
@@ -39,15 +39,14 @@ final class PhotoLibraryService: NSObject, PHPhotoLibraryChangeObserver {
             let result = PHAsset.fetchAssets(with: .video, options: fetchOptions)
             var assets: [PHAsset] = []
             result.enumerateObjects { asset, _, _ in
-                // Exclude Live Photo video components to preserve the pairing
                 guard !asset.mediaSubtypes.contains(.photoLive) else { return }
                 assets.append(asset)
             }
             return assets
         }.value
 
-        // Build VideoAsset models concurrently (bounded by the OS task scheduler)
         return await withTaskGroup(of: VideoAsset?.self) { group -> [VideoAsset] in
+            var count = 0
             for phAsset in phAssets {
                 group.addTask {
                     await self.buildVideoAsset(from: phAsset)
@@ -55,6 +54,8 @@ final class PhotoLibraryService: NSObject, PHPhotoLibraryChangeObserver {
             }
             var assets: [VideoAsset] = []
             for await result in group {
+                count += 1
+                progressHandler?(count)
                 if let asset = result { assets.append(asset) }
             }
             return assets.sorted { ($0.creationDate ?? .distantPast) > ($1.creationDate ?? .distantPast) }
