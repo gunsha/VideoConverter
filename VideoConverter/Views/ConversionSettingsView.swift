@@ -11,6 +11,16 @@ struct ConversionSettingsView: View {
 
     @State private var selectedResolution: CGSize
     @State private var selectedFPS: Double
+    @State private var bitratePercent: Double = 65
+
+    private var inputBitrate: Int {
+        guard asset.duration > 0 else { return 2_000_000 }
+        return max(Int(Double(asset.fileSize * 8) / asset.duration), 500_000)
+    }
+
+    private var targetBitrate: Int {
+        Int(Double(inputBitrate) * (bitratePercent / 100.0))
+    }
 
     private var estimatedBytes: Int64 {
         MetadataService.estimatedOutputBytes(
@@ -90,6 +100,42 @@ struct ConversionSettingsView: View {
                     }
                 } header: { Text("Frame Rate") }
 
+                // Bitrate picker
+                Section {
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack {
+                            Text("\(Int(bitratePercent))%")
+                                .font(.title3)
+                                .fontWeight(.semibold)
+                                .monospacedDigit()
+                            Spacer()
+                            Text(formatBitrate(targetBitrate))
+                                .foregroundStyle(.secondary)
+                                .monospacedDigit()
+                        }
+
+                        Slider(
+                            value: $bitratePercent,
+                            in: 10...100,
+                            step: 5
+                        )
+                        .labelsHidden()
+
+                        HStack {
+                            Text("10%")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            Text("\(formatBitrate(inputBitrate))")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .padding(.vertical, 4)
+                } header: { Text("Target Bitrate") } footer: {
+                    Text("Lower values = smaller files. 65% is recommended for good quality.")
+                }
+
                 // Estimate
                 Section {
                     LabeledContent("Estimated HEVC size") {
@@ -117,7 +163,8 @@ struct ConversionSettingsView: View {
                         conversionVM.enqueue(
                             asset: asset,
                             targetResolution: selectedResolution,
-                            targetFrameRate: selectedFPS
+                            targetFrameRate: selectedFPS,
+                            targetBitrate: targetBitrate
                         )
                         dismiss()
                     }
@@ -135,5 +182,14 @@ struct ConversionSettingsView: View {
         case 540:  return "qHD"
         default:   return "\(Int(size.height))p"
         }
+    }
+
+    private func formatBitrate(_ bitsPerSecond: Int) -> String {
+        if bitsPerSecond >= 1_000_000 {
+            return String(format: "%.1f Mbps", Double(bitsPerSecond) / 1_000_000)
+        } else if bitsPerSecond >= 1_000 {
+            return String(format: "%.0f kbps", Double(bitsPerSecond) / 1_000)
+        }
+        return "\(bitsPerSecond) bps"
     }
 }

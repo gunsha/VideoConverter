@@ -65,7 +65,7 @@ struct ConversionProgressView: View {
 // MARK: - Individual job row
 
 private struct JobRowView: View {
-    let job: ConversionJob
+    @Bindable var job: ConversionJob
     let onCancel: () -> Void
 
     var body: some View {
