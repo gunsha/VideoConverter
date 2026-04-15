@@ -7,11 +7,15 @@ import Photos
 struct VideoRowView: View {
     let asset: VideoAsset
     let isSelected: Bool
+    var onThumbnailTap: (() -> Void)?
 
     var body: some View {
         HStack(spacing: 12) {
             // Thumbnail
             ThumbnailView(asset: asset.phAsset, size: CGSize(width: 84, height: 63))
+                .onTapGesture {
+                    onThumbnailTap?()
+                }
                 .overlay(alignment: .bottomTrailing) {
                     Text(asset.formattedDuration)
                         .font(.caption2.bold())

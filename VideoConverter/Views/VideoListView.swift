@@ -9,6 +9,7 @@ struct VideoListView: View {
     @Environment(ConversionViewModel.self) private var conversionVM
 
     @State private var settingsTarget: VideoAsset?      // tapped single video
+    @State private var previewingAsset: VideoAsset?
     @State private var showingProgress = false
     @State private var resultJob: ConversionJob?        // completed job overlay
     @State private var isSelectionMode = false
@@ -32,6 +33,12 @@ struct VideoListView: View {
         // Progress sheet
         .sheet(isPresented: $conversionVM.showingProgress) {
             ConversionProgressView(viewModel: conversionVM)
+        }
+        // Video preview
+        .fullScreenCover(item: $previewingAsset) { asset in
+            VideoPreviewView(asset: asset) {
+                previewingAsset = nil
+            }
         }
         // Result overlay for last completed job
         .overlay {
@@ -78,7 +85,9 @@ struct VideoListView: View {
         } else {
             List {
                 ForEach(listVM.videos) { asset in
-                    VideoRowView(asset: asset, isSelected: listVM.selectedIDs.contains(asset.id))
+                    VideoRowView(asset: asset, isSelected: listVM.selectedIDs.contains(asset.id)) {
+                        previewingAsset = asset
+                    }
                         .onTapGesture {
                             if isSelectionMode {
                                 withAnimation(.spring(duration: 0.2)) {
