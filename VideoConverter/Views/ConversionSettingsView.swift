@@ -86,7 +86,11 @@ struct ConversionSettingsView: View {
                 Section {
                     ForEach(asset.frameRateOptions, id: \.self) { fps in
                         HStack {
-                            Text("\(Int(fps)) fps")
+                            if abs(fps - asset.frameRate) < 0.5 {
+                                Text("Original (\(Int(fps)) fps)")
+                            } else {
+                                Text("\(Int(fps)) fps")
+                            }
                             Spacer()
                             if abs(selectedFPS - fps) < 0.5 {
                                 Image(systemName: "checkmark")

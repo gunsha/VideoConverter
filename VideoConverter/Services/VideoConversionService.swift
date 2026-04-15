@@ -232,6 +232,8 @@ final class VideoConversionService {
 
         let naturalSize = try await sourceVideoTrack.load(.naturalSize)
         let preferredTransform = try await sourceVideoTrack.load(.preferredTransform)
+        let sourceFrameRate = Double(try await sourceVideoTrack.load(.nominalFrameRate))
+        let fpsIsOriginal = abs(targetFPS - sourceFrameRate) < 0.5
 
         let isPortrait = abs(preferredTransform.b) == 1 && abs(preferredTransform.c) == 0
         let effectiveWidth = isPortrait ? naturalSize.height : naturalSize.width
@@ -300,15 +302,31 @@ final class VideoConversionService {
         let writer = try AVAssetWriter(outputURL: outputURL, fileType: .mov)
         print("[VideoConversionService] Writer created at: \(outputURL.path)")
 
+        let sourceMetadata = try await asset.load(.metadata)
+        writer.metadata = sourceMetadata
+
+        let commonMetadata = try await asset.load(.commonMetadata)
+        if let cameraMake = commonMetadata.first(where: { $0.commonKey?.rawValue == "make" }) as? AVMetadataItem,
+           let cameraModel = commonMetadata.first(where: { $0.commonKey?.rawValue == "model" }) as? AVMetadataItem {
+            writer.metadata.append(cameraMake)
+            writer.metadata.append(cameraModel)
+        }
+
+        var compressionProps: [String: Any] = [
+            AVVideoAverageBitRateKey: targetBitrate,
+        ]
+        if !fpsIsOriginal {
+            compressionProps[AVVideoExpectedSourceFrameRateKey] = targetFPS
+        }
+        #if !targetEnvironment(simulator)
+        compressionProps[AVVideoProfileLevelKey] = kVTProfileLevel_HEVC_Main_AutoLevel
+        #endif
+
         let videoSettings: [String: Any] = [
             AVVideoCodecKey: AVVideoCodecType.hevc,
             AVVideoWidthKey: outputWidth,
             AVVideoHeightKey: outputHeight,
-            AVVideoCompressionPropertiesKey: [
-                AVVideoAverageBitRateKey: targetBitrate,
-                AVVideoExpectedSourceFrameRateKey: targetFPS,
-                AVVideoProfileLevelKey: kVTProfileLevel_HEVC_Main_AutoLevel,
-            ] as [String: Any]
+            AVVideoCompressionPropertiesKey: compressionProps
         ]
 
         let videoInput = AVAssetWriterInput(mediaType: .video, outputSettings: videoSettings)
@@ -349,17 +367,22 @@ final class VideoConversionService {
         reader.startReading()
         writer.startSession(atSourceTime: .zero)
 
-        let totalFrames = Int(duration * targetFPS)
+        let frameSkipInterval = !fpsIsOriginal && sourceFrameRate > targetFPS ? sourceFrameRate / targetFPS : 1
+        let totalFrames = fpsIsOriginal
+            ? Int(duration * sourceFrameRate)
+            : Int(duration * targetFPS)
         var framesWritten: Int64 = 0
+        var framesRead: Int64 = 0
 
         final class TaskManager: @unchecked Sendable {
             var taskID: UIBackgroundTaskIdentifier = .invalid
         }
         let manager = TaskManager()
         await MainActor.run {
-            manager.taskID = UIApplication.shared.beginBackgroundTask(withName: "HEVCConvert") { [weak writer] in
-                writer?.cancelWriting()
-                UIApplication.shared.endBackgroundTask(manager.taskID)
+            manager.taskID = UIApplication.shared.beginBackgroundTask(withName: "HEVCConvert") { [weak manager] in
+                if let id = manager?.taskID, id != .invalid {
+                    UIApplication.shared.endBackgroundTask(id)
+                }
             }
         }
 
@@ -379,7 +402,19 @@ final class VideoConversionService {
             while videoInput.isReadyForMoreMediaData {
                 autoreleasepool {
                     if let sampleBuffer = videoOutput.copyNextSampleBuffer() {
-                        let presentationTime = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+                        framesRead += 1
+
+                        let shouldSkip = frameSkipInterval > 1 && Int(framesRead) % Int(frameSkipInterval) != 0
+                        if shouldSkip {
+                            return
+                        }
+
+                        let presentationTime: CMTime
+                        if fpsIsOriginal {
+                            presentationTime = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+                        } else {
+                            presentationTime = CMTime(value: framesWritten, timescale: Int32(targetFPS))
+                        }
 
                         if let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) {
                             let ciImage = CIImage(cvPixelBuffer: pixelBuffer)

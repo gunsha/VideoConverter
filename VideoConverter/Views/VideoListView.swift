@@ -12,19 +12,13 @@ struct VideoListView: View {
     @State private var previewingAsset: VideoAsset?
     @State private var showingProgress = false
     @State private var resultJob: ConversionJob?        // completed job overlay
-    @State private var isSelectionMode = false
 
     var body: some View {
         @Bindable var conversionVM = conversionVM
         NavigationStack {
-            ZStack(alignment: .bottom) {
-                listContent
-                    .navigationTitle("Videos to Convert")
-                    .toolbar { toolbarItems }
-
-                // Floating action buttons
-                floatingButtons
-            }
+            listContent
+                .navigationTitle("Videos to Convert")
+                .toolbar { toolbarItems }
         }
         // Settings sheet (single video)
         .sheet(item: $settingsTarget) { asset in
@@ -56,13 +50,21 @@ struct VideoListView: View {
         }
         .animation(.spring(duration: 0.35), value: resultJob?.id)
         // Watch for newly completed jobs
-        .onChange(of: conversionVM.completedJobs.count) { _, count in
+        .onChange(of: conversionVM.completedJobs.count) { _, _ in
             if let latest = conversionVM.completedJobs.last, resultJob == nil {
                 withAnimation { resultJob = latest }
             }
         }
+        .onChange(of: conversionVM.hasActiveWork) { _, hasActive in
+            if !hasActive && conversionVM.completedJobs.count > 0 {
+                conversionVM.showingProgress = false
+            }
+        }
         .task { await listVM.load() }
-        .refreshable { await listVM.refresh() }
+        .modifier(RefreshableModifier(
+            isEnabled: !listVM.isLoading && !listVM.isRefreshing,
+            refreshAction: { await listVM.refresh() }
+        ))
     }
 
     // MARK: - Content
@@ -85,17 +87,11 @@ struct VideoListView: View {
         } else {
             List {
                 ForEach(listVM.videos) { asset in
-                    VideoRowView(asset: asset, isSelected: listVM.selectedIDs.contains(asset.id)) {
+                    VideoRowView(asset: asset, isSelected: false) {
                         previewingAsset = asset
                     }
                         .onTapGesture {
-                            if isSelectionMode {
-                                withAnimation(.spring(duration: 0.2)) {
-                                    listVM.toggleSelection(asset.id)
-                                }
-                            } else {
-                                settingsTarget = asset
-                            }
+                            settingsTarget = asset
                         }
                         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                             Button {
@@ -106,9 +102,16 @@ struct VideoListView: View {
                             .tint(Color.accentColor)
                         }
                 }
+                .listRowBackground(Color.clear)
             }
             .listStyle(.plain)
             .animation(.default, value: listVM.videos.map(\.id))
+            .safeAreaInset(edge: .bottom) {
+                videoStatsFooter(
+                    count: listVM.videos.count,
+                    totalSize: listVM.videos.reduce(0) { $0 + $1.fileSize }
+                )
+            }
         }
     }
 
@@ -153,60 +156,6 @@ struct VideoListView: View {
                 }
             }
         }
-
-        // Select / Done toggle
-        ToolbarItem(placement: .topBarTrailing) {
-            Button(isSelectionMode ? "Done" : "Select") {
-                withAnimation {
-                    isSelectionMode.toggle()
-                    if !isSelectionMode { listVM.clearSelection() }
-                }
-            }
-        }
-    }
-
-    // MARK: - Floating buttons
-
-    @ViewBuilder
-    private var floatingButtons: some View {
-        @Bindable var listVM = listVM
-        let count = listVM.selectedIDs.count
-        if isSelectionMode && count > 0 {
-            VStack(spacing: 10) {
-                HStack(spacing: 12) {
-                    Button {
-                        listVM.selectAll()
-                    } label: {
-                        Label("All", systemImage: "checkmark.circle")
-                            .font(.subheadline.bold())
-                    }
-                    .buttonStyle(.bordered)
-                    .tint(.secondary)
-
-                    Button {
-                        conversionVM.enqueueBatch(assets: listVM.selectedVideos)
-                        withAnimation {
-                            isSelectionMode = false
-                            listVM.clearSelection()
-                        }
-                    } label: {
-                        Label("Convert \(count) Video\(count == 1 ? "" : "s")",
-                              systemImage: "film.stack")
-                            .font(.subheadline.bold())
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(Color.accentColor)
-                }
-                .padding(.horizontal, 20)
-                .padding(.vertical, 12)
-                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-                .shadow(color: .black.opacity(0.15), radius: 12, y: 4)
-                .padding(.horizontal)
-                .padding(.bottom, 8)
-                .transition(.move(edge: .bottom).combined(with: .opacity))
-            }
-        }
     }
 
     // MARK: - State views
@@ -225,6 +174,24 @@ struct VideoListView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    @ViewBuilder
+    private func videoStatsFooter(count: Int, totalSize: Int64) -> some View {
+        let sizeStr = ByteCountFormatter.string(fromByteCount: totalSize, countStyle: .file)
+
+        HStack {
+            Text("\(count) video\(count == 1 ? "" : "s")")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+            Spacer()
+            Text(sizeStr)
+                .font(.subheadline.monospacedDigit())
+                .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(.regularMaterial)
     }
 
     private var emptyStateView: some View {
@@ -261,5 +228,49 @@ struct VideoListView: View {
             }
             .buttonStyle(.borderedProminent)
         }
+    }
+}
+
+private struct RefreshableModifier: ViewModifier {
+    let isEnabled: Bool
+    let refreshAction: () async -> Void
+
+    @State private var isRefreshing = false
+
+    func body(content: Content) -> some View {
+        content
+            .overlay {
+                if isRefreshing {
+                    GeometryReader { geo in
+                        Color.clear.preference(
+                            key: RefreshKey.self,
+                            value: [RefreshPreference(reference: geo.frame(in: .global).origin)]
+                        )
+                    }
+                    .frame(height: 0)
+                }
+            }
+            .onPreferenceChange(RefreshKey.self) { preferences in
+                guard isEnabled, let pref = preferences.first else { return }
+                if -pref.reference.y > 80 {
+                    isRefreshing = true
+                    Task {
+                        await refreshAction()
+                        await MainActor.run { isRefreshing = false }
+                    }
+                }
+            }
+    }
+}
+
+private struct RefreshPreference: Equatable {
+    let reference: CGPoint
+}
+
+private struct RefreshKey: PreferenceKey {
+    static var defaultValue: [RefreshPreference] { [] }
+
+    static func reduce(value: inout [RefreshPreference], nextValue: () -> [RefreshPreference]) {
+        value.append(contentsOf: nextValue())
     }
 }

@@ -62,8 +62,12 @@ extension VideoAsset {
         return standards.filter { $0.width <= resolution.width && $0.height <= resolution.height }
     }
 
-    /// Available downscale FPS options (≤ original).
+    /// Available FPS options including original.
     var frameRateOptions: [Double] {
-        [60, 30, 25, 24].filter { $0 <= frameRate + 0.5 }
+        var options: [Double] = [60, 30, 25, 24]
+        if !options.contains(frameRate) {
+            options.append(frameRate)
+        }
+        return options.sorted()
     }
 }

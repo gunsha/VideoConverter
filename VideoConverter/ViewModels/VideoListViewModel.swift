@@ -31,7 +31,6 @@ final class VideoListViewModel {
     var discoveredCount: Int = 0
     var authorizationStatus: PHAuthorizationStatus = PHPhotoLibrary.authorizationStatus(for: .readWrite)
     var sortOrder: SortOrder = .date { didSet { applySortOrder() } }
-    var selectedIDs: Set<String> = []
     var error: String?
 
     // MARK: - Dependencies
@@ -71,27 +70,8 @@ final class VideoListViewModel {
     }
 
     func refresh() async {
+        isLoading = true
         await fetchAndCache()
-    }
-
-    func selectAll() {
-        selectedIDs = Set(videos.map(\.id))
-    }
-
-    func clearSelection() {
-        selectedIDs = []
-    }
-
-    func toggleSelection(_ id: String) {
-        if selectedIDs.contains(id) {
-            selectedIDs.remove(id)
-        } else {
-            selectedIDs.insert(id)
-        }
-    }
-
-    var selectedVideos: [VideoAsset] {
-        videos.filter { selectedIDs.contains($0.id) }
     }
 
     // MARK: - Private
