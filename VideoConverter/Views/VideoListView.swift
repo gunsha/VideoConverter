@@ -118,6 +118,16 @@ struct VideoListView: View {
     private var toolbarItems: some ToolbarContent {
         @Bindable var listVM = listVM
 
+        // Refresh button
+        ToolbarItem(placement: .topBarLeading) {
+            Button {
+                Task { await listVM.refresh() }
+            } label: {
+                Label("Refresh", systemImage: "arrow.clockwise")
+            }
+            .disabled(listVM.isLoading || listVM.isRefreshing)
+        }
+
         // Sort menu
         ToolbarItem(placement: .topBarLeading) {
             Menu {

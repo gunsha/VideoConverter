@@ -27,6 +27,7 @@ final class VideoListViewModel {
     // MARK: - State
     var videos: [VideoAsset] = []
     var isLoading = false
+    var isRefreshing = false
     var discoveredCount: Int = 0
     var authorizationStatus: PHAuthorizationStatus = PHPhotoLibrary.authorizationStatus(for: .readWrite)
     var sortOrder: SortOrder = .date { didSet { applySortOrder() } }
@@ -35,12 +36,10 @@ final class VideoListViewModel {
 
     // MARK: - Dependencies
     private let photoLibraryService: PhotoLibraryService
+    private let cacheService = VideoCacheService()
 
     init(photoLibraryService: PhotoLibraryService) {
         self.photoLibraryService = photoLibraryService
-        photoLibraryService.onLibraryChanged { [weak self] in
-            Task { await self?.load() }
-        }
     }
 
     // MARK: - Public API
@@ -59,17 +58,20 @@ final class VideoListViewModel {
             return
         }
 
-        let fetched = await photoLibraryService.fetchNonHEVCVideos { [weak self] count in
-            Task { @MainActor [weak self] in
-                self?.discoveredCount = count
+        if let cached = await loadFromCache() {
+            videos = cached
+            isLoading = false
+            Task {
+                await refreshInBackground()
             }
+            return
         }
-        videos = sorted(fetched, by: sortOrder)
-        isLoading = false
+
+        await fetchAndCache()
     }
 
     func refresh() async {
-        await load()
+        await fetchAndCache()
     }
 
     func selectAll() {
@@ -93,6 +95,50 @@ final class VideoListViewModel {
     }
 
     // MARK: - Private
+
+    private func loadFromCache() async -> [VideoAsset]? {
+        guard let cache = await cacheService.load() else { return nil }
+
+        var cachedVideos: [VideoAsset] = []
+        for cached in cache.assets {
+            if let asset = await photoLibraryService.fetchVideoAsset(by: cached.id) {
+                cachedVideos.append(asset)
+            }
+        }
+
+        if cachedVideos.isEmpty { return nil }
+        return sorted(cachedVideos, by: sortOrder)
+    }
+
+    private func fetchAndCache() async {
+        isRefreshing = true
+        discoveredCount = 0
+
+        let fetched = await photoLibraryService.fetchNonHEVCVideos { [weak self] count in
+            Task { @MainActor [weak self] in
+                self?.discoveredCount = count
+            }
+        }
+
+        videos = sorted(fetched, by: sortOrder)
+        isLoading = false
+        isRefreshing = false
+
+        let cache = VideoCache(
+            assets: fetched.map { CachedVideoAsset(from: $0) },
+            cachedAt: Date(),
+            photoLibraryVersion: ""
+        )
+        await cacheService.save(cache)
+    }
+
+    private func refreshInBackground() async {
+        await fetchAndCache()
+    }
+
+    func clearCache() async {
+        await cacheService.clear()
+    }
 
     private func applySortOrder() {
         videos = sorted(videos, by: sortOrder)

@@ -35,6 +35,7 @@ final class PhotoLibraryService: NSObject, PHPhotoLibraryChangeObserver {
             let fetchOptions = PHFetchOptions()
             fetchOptions.predicate = NSPredicate(format: "mediaType == %d", PHAssetMediaType.video.rawValue)
             fetchOptions.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
+            fetchOptions.includeHiddenAssets = false
 
             let result = PHAsset.fetchAssets(with: .video, options: fetchOptions)
             var assets: [PHAsset] = []
@@ -62,9 +63,18 @@ final class PhotoLibraryService: NSObject, PHPhotoLibraryChangeObserver {
         }
     }
 
+    // MARK: - Fetch single asset by ID
+
+    func fetchVideoAsset(by identifier: String) async -> VideoAsset? {
+        guard let phAsset = PHAsset.fetchAssets(withLocalIdentifiers: [identifier], options: nil).firstObject else {
+            return nil
+        }
+        return await buildVideoAsset(from: phAsset)
+    }
+
     // MARK: - Private helpers
 
-    private func buildVideoAsset(from phAsset: PHAsset) async -> VideoAsset? {
+    private nonisolated func buildVideoAsset(from phAsset: PHAsset) async -> VideoAsset? {
         guard let avAsset = await loadAVURLAsset(for: phAsset) else { return nil }
 
         // Load video tracks
@@ -105,7 +115,7 @@ final class PhotoLibraryService: NSObject, PHPhotoLibraryChangeObserver {
         )
     }
 
-    private func loadAVURLAsset(for phAsset: PHAsset) async -> AVURLAsset? {
+    private nonisolated func loadAVURLAsset(for phAsset: PHAsset) async -> AVURLAsset? {
         await withCheckedContinuation { continuation in
             let options = PHVideoRequestOptions()
             options.isNetworkAccessAllowed = false
@@ -116,7 +126,7 @@ final class PhotoLibraryService: NSObject, PHPhotoLibraryChangeObserver {
         }
     }
 
-    private func codecName(from desc: CMFormatDescription?) -> String {
+    private nonisolated func codecName(from desc: CMFormatDescription?) -> String {
         guard let desc else { return "Unknown" }
         let sub = CMFormatDescriptionGetMediaSubType(desc)
         switch sub {
