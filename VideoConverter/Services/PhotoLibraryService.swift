@@ -57,7 +57,10 @@ final class PhotoLibraryService: NSObject, PHPhotoLibraryChangeObserver {
             for await result in group {
                 if let asset = result {
                     count += 1
-                    progressHandler?(count)
+                    let currentCount = count
+                    Task { @MainActor in
+                        progressHandler?(currentCount)
+                    }
                     assets.append(asset)
                 }
             }

@@ -126,9 +126,13 @@ struct VideoListView: View {
             Button {
                 Task { await listVM.refresh() }
             } label: {
-                Label("Refresh", systemImage: "arrow.clockwise")
+                if listVM.isLoading || listVM.isRefreshing {
+                    ProgressView()
+                        .controlSize(.regular)
+                } else {
+                    Label("Refresh", systemImage: "arrow.clockwise")
+                }
             }
-            .disabled(listVM.isLoading || listVM.isRefreshing)
         }
 
         // Filter menu

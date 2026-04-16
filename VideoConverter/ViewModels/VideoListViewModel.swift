@@ -138,7 +138,17 @@ final class VideoListViewModel {
     private func loadFromCache() async -> [VideoAsset]? {
         guard let cache = await cacheService.load() else { return nil }
 
-        let cachedVideos = cache.assets.map { VideoAsset(from: $0) }
+        let identifiers = cache.assets.map { $0.id }
+        let assets = PHAsset.fetchAssets(withLocalIdentifiers: identifiers, options: nil)
+
+        var phAssetMap: [String: PHAsset] = [:]
+        assets.enumerateObjects { asset, _, _ in
+            phAssetMap[asset.localIdentifier] = asset
+        }
+
+        let cachedVideos = cache.assets.map { cached in
+            VideoAsset(from: cached, phAsset: phAssetMap[cached.id])
+        }
         if cachedVideos.isEmpty { return nil }
         return sorted(cachedVideos, by: sortOrder)
     }
@@ -146,6 +156,12 @@ final class VideoListViewModel {
     private func fetchAndCache() async {
         isRefreshing = true
         discoveredCount = 0
+
+        guard authorizationStatus == .authorized || authorizationStatus == .limited else {
+            isLoading = false
+            isRefreshing = false
+            return
+        }
 
         let fetched = await photoLibraryService.fetchNonHEVCVideos { [weak self] count in
             Task { @MainActor [weak self] in
