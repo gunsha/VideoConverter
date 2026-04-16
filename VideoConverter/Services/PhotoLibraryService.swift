@@ -98,11 +98,8 @@ final class PhotoLibraryService: NSObject, PHPhotoLibraryChangeObserver {
         let frameRate = (try? await videoTrack.load(.nominalFrameRate)).map(Double.init) ?? 30.0
         let naturalSize = (try? await videoTrack.load(.naturalSize)) ?? CGSize(width: phAsset.pixelWidth, height: phAsset.pixelHeight)
 
-        // File size via PHAssetResource KVC (widely used private API)
-        let resources = PHAssetResource.assetResources(for: phAsset)
-        let videoResource = resources.first(where: { $0.type == .video })
-        let fileSize = (videoResource?.value(forKey: "fileSize") as? NSNumber)?.int64Value ?? 0
-        let filename = videoResource?.originalFilename ?? "video.mov"
+        let fileSize = await getVideoFileSize(for: phAsset)
+        let filename = phAsset.value(forKey: "preferredFilename") as? String ?? "video.mov"
 
         return VideoAsset(
             id: phAsset.localIdentifier,
@@ -127,6 +124,29 @@ final class PhotoLibraryService: NSObject, PHPhotoLibraryChangeObserver {
             options.deliveryMode = .fastFormat
             PHImageManager.default().requestAVAsset(forVideo: phAsset, options: options) { avAsset, _, _ in
                 continuation.resume(returning: avAsset as? AVURLAsset)
+            }
+        }
+    }
+
+    private nonisolated func getVideoFileSize(for phAsset: PHAsset) async -> Int64 {
+        await withCheckedContinuation { continuation in
+            let options = PHVideoRequestOptions()
+            options.isNetworkAccessAllowed = false
+            options.deliveryMode = .fastFormat
+            PHImageManager.default().requestAVAsset(forVideo: phAsset, options: options) { avAsset, _, _ in
+                guard let avAsset = avAsset as? AVURLAsset else {
+                    continuation.resume(returning: 0)
+                    return
+                }
+                Task.detached {
+                    do {
+                        let attrs = try FileManager.default.attributesOfItem(atPath: avAsset.url.path)
+                        let fileSize = (attrs[.size] as? Int64) ?? 0
+                        await MainActor.run { continuation.resume(returning: fileSize) }
+                    } catch {
+                        await MainActor.run { continuation.resume(returning: 0) }
+                    }
+                }
             }
         }
     }

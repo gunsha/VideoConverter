@@ -16,8 +16,6 @@ final class StorageAnalysisService {
             return nil
         }
         let url = documentsURL.appendingPathComponent(cacheFileName)
-        print("[StorageAnalysisService] Cache URL: \(url.path)")
-        print("[StorageAnalysisService] File exists: \(fileManager.fileExists(atPath: url.path))")
         return url
     }
 
@@ -37,7 +35,7 @@ final class StorageAnalysisService {
             let decoder = JSONDecoder()
             decoder.dateDecodingStrategy = .iso8601
             let result = try decoder.decode(StorageAnalysis.self, from: data)
-            print("[StorageAnalysisService] Loaded from cache: \(result.totalCount) items, \(result.totalBytes) bytes")
+            print("[StorageAnalysisService] Loaded from cache: \(result.totalCount) items")
             return result
         } catch {
             print("[StorageAnalysisService] Failed to decode cache: \(error)")
@@ -56,7 +54,7 @@ final class StorageAnalysisService {
             encoder.dateEncodingStrategy = .iso8601
             let data = try encoder.encode(analysis)
             try data.write(to: url, options: .atomic)
-            print("[StorageAnalysisService] Saved \(analysis.totalCount) items to \(url.path)")
+            print("[StorageAnalysisService] Saved \(analysis.totalCount) items")
         } catch {
             print("[StorageAnalysisService] Failed to save: \(error)")
         }
@@ -96,22 +94,8 @@ final class StorageAnalysisService {
 
         for i in 0..<images.count {
             let asset = images.object(at: i)
-            let resources = PHAssetResource.assetResources(for: asset)
-            let isLivePhoto = resources.contains { resource in
-                let t = resource.value(forKey: "type") as? Int
-                return t == 3
-            }
-            if isLivePhoto {
-                for resource in resources {
-                    livePhotoBytes += (resource.value(forKey: "fileSize") as? NSNumber)?.int64Value ?? 0
-                }
-                livePhotoCount += 1
-            } else {
-                for resource in resources where resource.type == .photo {
-                    photoBytes += (resource.value(forKey: "fileSize") as? NSNumber)?.int64Value ?? 0
-                }
-                photoCount += 1
-            }
+            photoBytes += await getImageFileSize(for: asset)
+            photoCount += 1
             processed += 1
             let currentCount = processed
             Task { @MainActor in
@@ -121,21 +105,21 @@ final class StorageAnalysisService {
 
         for i in 0..<videos.count {
             let asset = videos.object(at: i)
-            let resources = PHAssetResource.assetResources(for: asset)
-            let size: Int64
-            if let videoResource = resources.first(where: { $0.type == .video }) {
-                size = (videoResource.value(forKey: "fileSize") as? NSNumber)?.int64Value ?? 0
-            } else {
-                size = 0
-            }
+            let isLivePhoto = asset.mediaSubtypes.contains(.photoLive)
+            let size = await getVideoFileSize(for: asset)
 
-            let isHEVC = await checkIsHEVC(for: asset)
-            if isHEVC {
-                hevcVideoBytes += size
-                hevcVideoCount += 1
+            if isLivePhoto {
+                livePhotoBytes += size
+                livePhotoCount += 1
             } else {
-                nonHevcVideoBytes += size
-                nonHevcVideoCount += 1
+                let isHEVC = await checkIsHEVC(for: asset)
+                if isHEVC {
+                    hevcVideoBytes += size
+                    hevcVideoCount += 1
+                } else {
+                    nonHevcVideoBytes += size
+                    nonHevcVideoCount += 1
+                }
             }
             processed += 1
             let currentCount = processed
@@ -159,6 +143,41 @@ final class StorageAnalysisService {
         await save(analysis)
 
         return analysis
+    }
+
+    private nonisolated func getImageFileSize(for asset: PHAsset) async -> Int64 {
+        await withCheckedContinuation { continuation in
+            let options = PHImageRequestOptions()
+            options.isNetworkAccessAllowed = false
+            options.deliveryMode = .fastFormat
+            options.resizeMode = .fast
+            PHImageManager.default().requestImageDataAndOrientation(for: asset, options: options) { data, _, _, _ in
+                continuation.resume(returning: Int64(data?.count ?? 0))
+            }
+        }
+    }
+
+    private nonisolated func getVideoFileSize(for asset: PHAsset) async -> Int64 {
+        await withCheckedContinuation { continuation in
+            let options = PHVideoRequestOptions()
+            options.isNetworkAccessAllowed = false
+            options.deliveryMode = .fastFormat
+            PHImageManager.default().requestAVAsset(forVideo: asset, options: options) { avAsset, _, _ in
+                guard let avAsset = avAsset as? AVURLAsset else {
+                    continuation.resume(returning: 0)
+                    return
+                }
+                Task.detached {
+                    do {
+                        let attrs = try FileManager.default.attributesOfItem(atPath: avAsset.url.path)
+                        let fileSize = (attrs[.size] as? Int64) ?? 0
+                        await MainActor.run { continuation.resume(returning: fileSize) }
+                    } catch {
+                        await MainActor.run { continuation.resume(returning: 0) }
+                    }
+                }
+            }
+        }
     }
 
     private nonisolated func checkIsHEVC(for asset: PHAsset) async -> Bool {
