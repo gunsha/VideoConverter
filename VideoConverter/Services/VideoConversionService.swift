@@ -191,12 +191,19 @@ final class VideoConversionService {
         let naturalSize = try await sourceVideoTrack.load(.naturalSize)
         let preferredTransform = try await sourceVideoTrack.load(.preferredTransform)
         let sourceFrameRate = Double(try await sourceVideoTrack.load(.nominalFrameRate))
+
+        // FIX: Single declaration of fpsIsOriginal and frameSkipInterval.
+        // fpsIsOriginal is true when the difference is negligible (< 0.5 fps).
         let fpsIsOriginal = abs(targetFPS - sourceFrameRate) < 0.5
-        let frameSkipInterval = !fpsIsOriginal && sourceFrameRate > targetFPS ? sourceFrameRate / targetFPS : 1
-        
-        var useOriginalTimestamps = !fpsIsOriginal
+
+        // frameSkipInterval > 1 only when we are reducing FPS.
+        // e.g. 60fps -> 30fps gives interval = 2.0 (keep 1 frame, skip 1).
+        let frameSkipInterval: Double = (!fpsIsOriginal && sourceFrameRate > targetFPS)
+            ? sourceFrameRate / targetFPS
+            : 1.0
+
         if !fpsIsOriginal {
-            ConversionLogger.debug("Frame rate conversion requested: \(Int(sourceFrameRate)) -> \(Int(targetFPS))")
+            ConversionLogger.debug("Frame rate conversion: \(Int(sourceFrameRate))fps -> \(Int(targetFPS))fps (skip interval: \(frameSkipInterval))")
         }
 
         let isPortrait = abs(preferredTransform.b) == 1 && abs(preferredTransform.c) == 0
@@ -331,12 +338,18 @@ final class VideoConversionService {
         reader.startReading()
         writer.startSession(atSourceTime: .zero)
 
-        let frameSkipInterval = !fpsIsOriginal && sourceFrameRate > targetFPS ? sourceFrameRate / targetFPS : 1
         let totalFrames = fpsIsOriginal
             ? Int(duration * sourceFrameRate)
             : Int(duration * targetFPS)
+
+        // FIX: Use an accumulator for even frame distribution instead of modulo.
+        // framesRead counts every source frame decoded.
+        // framesWritten counts every frame actually appended to the output.
+        // frameAccumulator tracks the fractional position so drops are spread evenly
+        // across the video (avoids judder from naive modulo skipping).
         var framesWritten: Int64 = 0
         var framesRead: Int64 = 0
+        var frameAccumulator: Double = 0.0
 
         final class TaskManager: @unchecked Sendable {
             var taskID: UIBackgroundTaskIdentifier = .invalid
@@ -368,15 +381,35 @@ final class VideoConversionService {
                     if let sampleBuffer = videoOutput.copyNextSampleBuffer() {
                         framesRead += 1
 
-                        let shouldSkip = frameSkipInterval > 1 && Int(framesRead) % Int(frameSkipInterval) != 1
-                        if shouldSkip {
-                            return
+                        // FIX: Accumulator-based frame skipping for even cadence.
+                        // On each source frame, add 1.0 to the accumulator.
+                        // Only write when the accumulator reaches the skip interval,
+                        // then subtract the interval (keeping the fractional remainder).
+                        // Example at 60->30fps (interval=2.0):
+                        //   frame 1: acc=1.0 < 2.0 → skip
+                        //   frame 2: acc=2.0 >= 2.0 → write, acc becomes 0.0
+                        //   frame 3: acc=1.0 < 2.0 → skip
+                        //   frame 4: acc=2.0 >= 2.0 → write, acc becomes 0.0
+                        if frameSkipInterval > 1.0 {
+                            frameAccumulator += 1.0
+                            if frameAccumulator < frameSkipInterval {
+                                return // skip this source frame
+                            }
+                            frameAccumulator -= frameSkipInterval
                         }
 
+                        // FIX: Always assign new sequential timestamps based on targetFPS
+                        // when doing FPS conversion. Using original timestamps was the
+                        // root cause of the slowdown: frames were spaced at the source
+                        // cadence (1/60s apart) but only half were written, so the player
+                        // saw 30fps content spanning the full original duration → 2x slowdown.
                         let presentationTime: CMTime
-                        if useOriginalTimestamps {
+                        if fpsIsOriginal {
+                            // No FPS change — preserve the original timestamps exactly.
                             presentationTime = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
                         } else {
+                            // FPS conversion — assign sequential timestamps at targetFPS.
+                            // This ensures the output plays at the correct speed.
                             presentationTime = CMTime(value: framesWritten, timescale: Int32(targetFPS))
                         }
 
