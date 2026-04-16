@@ -8,28 +8,6 @@ import CoreLocation
 import UIKit
 import VideoToolbox
 
-// MARK: - Errors
-
-enum ConversionError: LocalizedError {
-    case assetLoadFailed
-    case exportSessionCreationFailed
-    case exportFailed(String)
-    case noVideoTrack
-    case insufficientStorage
-    case encodingFailed(String)
-
-    var errorDescription: String? {
-        switch self {
-        case .assetLoadFailed:              return "Could not load the video from your library."
-        case .exportSessionCreationFailed:  return "Could not create an export session."
-        case .exportFailed(let reason):     return "Export failed: \(reason)"
-        case .noVideoTrack:                 return "The video has no video track."
-        case .insufficientStorage:          return "Not enough storage space to complete the conversion."
-        case .encodingFailed(let reason):   return "Encoding failed: \(reason)"
-        }
-    }
-}
-
 // MARK: - VideoConversionService
 
 final class VideoConversionService {
@@ -55,7 +33,7 @@ final class VideoConversionService {
             targetResolution: job.targetResolution,
             targetFPS: job.targetFrameRate
         )
-        try checkStorageSpace(estimatedBytes: max(estimated * 2, 50_000_000))
+        try VideoConversionUtils.checkStorageSpace(estimatedBytes: max(estimated * 2, 50_000_000))
 
         let tempFileName = "HEVC_\(ProcessInfo.processInfo.processIdentifier)_\(Date().timeIntervalSince1970)_\(UUID().uuidString).mov"
         let tempURL = FileManager.default.temporaryDirectory
@@ -65,11 +43,15 @@ final class VideoConversionService {
             try FileManager.default.removeItem(at: tempURL)
         }
 
-        print("[VideoConversionService] Temp file path: \(tempURL.path)")
-        print("[VideoConversionService] Temp dir contents before: \(String(describing: try? FileManager.default.contentsOfDirectory(atPath: FileManager.default.temporaryDirectory.path)))")
+        ConversionLogger.debug("Temp file path: \(tempURL.path)")
+        ConversionLogger.debug("Temp dir contents before: \(String(describing: try? FileManager.default.contentsOfDirectory(atPath: FileManager.default.temporaryDirectory.path)))")
 
+        guard let phAsset = job.sourceAsset.phAsset else {
+            throw ConversionError.assetNotFound
+        }
+        
         try await performExport(
-            from: job.sourceAsset.phAsset,
+            from: phAsset,
             to: tempURL,
             job: job,
             progressHandler: progressHandler
@@ -82,21 +64,21 @@ final class VideoConversionService {
 
     @discardableResult
     func saveToPhotoLibrary(url: URL, originalAsset: VideoAsset) async throws -> String {
-        print("[VideoConversionService] Attempting to save file at: \(url.path)")
+        ConversionLogger.debug("Attempting to save file at: \(url.path)")
         
         guard FileManager.default.fileExists(atPath: url.path) else {
             let error = ConversionError.exportFailed("Converted file not found at \(url.path)")
-            print("[VideoConversionService] \(error.errorDescription ?? "")")
+            ConversionLogger.debug(error.errorDescription ?? "")
             throw error
         }
 
         let attrs = try FileManager.default.attributesOfItem(atPath: url.path)
         guard let fileSize = attrs[.size] as? Int64, fileSize > 0 else {
             let error = ConversionError.exportFailed("Converted file is empty")
-            print("[VideoConversionService] \(error.errorDescription ?? "")")
+            ConversionLogger.debug(error.errorDescription ?? "")
             throw error
         }
-        print("[VideoConversionService] File size: \(fileSize) bytes")
+        ConversionLogger.debug("File size: \(fileSize) bytes")
 
         var placeholderID: String?
 
@@ -131,26 +113,16 @@ final class VideoConversionService {
                 }
             }, completionHandler: { success, error in
                 if let error {
-                    print("[VideoConversionService] Save error: \(error.localizedDescription) (code: \((error as NSError).code))")
+                    ConversionLogger.error("Save error: \(error.localizedDescription) (code: \((error as NSError).code))")
                     cont.resume(throwing: error)
                 } else {
-                    print("[VideoConversionService] Save succeeded")
+                    ConversionLogger.debug("Save succeeded")
                     cont.resume()
                 }
             })
         }
 
         return placeholderID ?? ""
-    }
-
-    // MARK: - Private helpers
-
-    private func checkStorageSpace(estimatedBytes: Int64) throws {
-        guard let attrs = try? FileManager.default.attributesOfFileSystem(
-            forPath: FileManager.default.temporaryDirectory.path
-        ),
-        let free = attrs[.systemFreeSize] as? Int64 else { return }
-        if free < estimatedBytes { throw ConversionError.insufficientStorage }
     }
 
     // MARK: - Export
@@ -165,14 +137,14 @@ final class VideoConversionService {
         let duration = try await avAsset.load(.duration)
         let durationSeconds = duration.seconds
 
-        let inputBitrate = calculateBitrate(fileSize: job.sourceAsset.fileSize, duration: durationSeconds)
-        let targetBitrate = calculateTargetBitrate(
+        let inputBitrate = VideoConversionUtils.calculateBitrate(fileSize: job.sourceAsset.fileSize, duration: durationSeconds)
+        let targetBitrate = VideoConversionUtils.calculateTargetBitrate(
             inputBitrate: inputBitrate,
             targetBitrate: job.targetBitrate,
             compressionRatio: 0.65
         )
 
-        printStats(input: avAsset, sourceAsset: job.sourceAsset, label: "INPUT", inputBitrate: inputBitrate, targetBitrate: targetBitrate)
+        VideoConversionUtils.printInputStats(asset: avAsset, sourceAsset: job.sourceAsset, inputBitrate: inputBitrate, targetBitrate: targetBitrate)
 
         let needsDownscale = job.targetResolution.width < job.sourceAsset.resolution.width - 1 ||
                              job.targetResolution.height < job.sourceAsset.resolution.height - 1
@@ -199,21 +171,7 @@ final class VideoConversionService {
             )
         }
 
-        printStats(url: outputURL, label: "OUTPUT")
-    }
-
-    private func calculateBitrate(fileSize: Int64, duration: Double) -> Int {
-        guard duration > 0 else { return 2_000_000 }
-        let bitsPerSecond = Double(fileSize * 8) / duration
-        return max(Int(bitsPerSecond), 500_000)
-    }
-
-    private func calculateTargetBitrate(inputBitrate: Int, targetBitrate: Int?, compressionRatio: Double) -> Int {
-        if let explicit = targetBitrate {
-            return explicit
-        }
-        let target = Double(inputBitrate) * compressionRatio
-        return max(Int(target), 100_000)
+        VideoConversionUtils.printOutputStats(url: outputURL)
     }
 
     private func exportWithAVAssetWriter(
@@ -234,6 +192,12 @@ final class VideoConversionService {
         let preferredTransform = try await sourceVideoTrack.load(.preferredTransform)
         let sourceFrameRate = Double(try await sourceVideoTrack.load(.nominalFrameRate))
         let fpsIsOriginal = abs(targetFPS - sourceFrameRate) < 0.5
+        let frameSkipInterval = !fpsIsOriginal && sourceFrameRate > targetFPS ? sourceFrameRate / targetFPS : 1
+        
+        var useOriginalTimestamps = !fpsIsOriginal
+        if !fpsIsOriginal {
+            ConversionLogger.debug("Frame rate conversion requested: \(Int(sourceFrameRate)) -> \(Int(targetFPS))")
+        }
 
         let isPortrait = abs(preferredTransform.b) == 1 && abs(preferredTransform.c) == 0
         let effectiveWidth = isPortrait ? naturalSize.height : naturalSize.width
@@ -300,7 +264,7 @@ final class VideoConversionService {
         }
 
         let writer = try AVAssetWriter(outputURL: outputURL, fileType: .mov)
-        print("[VideoConversionService] Writer created at: \(outputURL.path)")
+        ConversionLogger.debug("Writer created at: \(outputURL.path)")
 
         let sourceMetadata = try await asset.load(.metadata)
         writer.metadata = sourceMetadata
@@ -404,13 +368,13 @@ final class VideoConversionService {
                     if let sampleBuffer = videoOutput.copyNextSampleBuffer() {
                         framesRead += 1
 
-                        let shouldSkip = frameSkipInterval > 1 && Int(framesRead) % Int(frameSkipInterval) != 0
+                        let shouldSkip = frameSkipInterval > 1 && Int(framesRead) % Int(frameSkipInterval) != 1
                         if shouldSkip {
                             return
                         }
 
                         let presentationTime: CMTime
-                        if fpsIsOriginal {
+                        if useOriginalTimestamps {
                             presentationTime = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
                         } else {
                             presentationTime = CMTime(value: framesWritten, timescale: Int32(targetFPS))
@@ -477,7 +441,7 @@ final class VideoConversionService {
         }
 
         if let error = reader.error {
-            print("[VideoConversionService] Reader error: \(error.localizedDescription)")
+            ConversionLogger.debug("Reader error: \(error.localizedDescription)")
         }
 
         await MainActor.run {
@@ -486,30 +450,30 @@ final class VideoConversionService {
 
         if videoCompleted && audioCompleted {
             await writer.finishWriting()
-            print("[VideoConversionService] Writer status: \(writer.status.rawValue)")
+            ConversionLogger.debug("Writer status: \(writer.status.rawValue)")
             
             switch writer.status {
             case .completed:
-                print("[VideoConversionService] Writer completed successfully")
+                ConversionLogger.debug("Writer completed successfully")
                 Task { @MainActor in
                     progressHandler(1.0)
                 }
             case .failed:
                 let error = writer.error
                 let nsError = error as NSError?
-                print("[VideoConversionService] Writer failed: \(error?.localizedDescription ?? "unknown")")
-                print("[VideoConversionService] Error domain: \(nsError?.domain ?? "unknown")")
-                print("[VideoConversionService] Error code: \(nsError?.code ?? -1)")
-                print("[VideoConversionService] Error userInfo: \(nsError?.userInfo ?? [:])")
+                ConversionLogger.error("Writer failed: \(error?.localizedDescription ?? "unknown")")
+                ConversionLogger.error("Error domain: \(nsError?.domain ?? "unknown")")
+                ConversionLogger.error("Error code: \(nsError?.code ?? -1)")
+                ConversionLogger.error("Error userInfo: \(nsError?.userInfo ?? [:])")
                 throw ConversionError.exportFailed(error?.localizedDescription ?? "Unknown writer error")
             case .cancelled:
-                print("[VideoConversionService] Writer cancelled")
+                ConversionLogger.debug("Writer cancelled")
                 throw ConversionError.exportFailed("Writer was cancelled")
             case .writing, .unknown:
-                print("[VideoConversionService] Writer unexpected state: \(writer.status.rawValue)")
+                ConversionLogger.debug("Writer unexpected state: \(writer.status.rawValue)")
                 throw ConversionError.exportFailed("Writer unexpected state: \(writer.status.rawValue)")
             @unknown default:
-                print("[VideoConversionService] Writer unknown state: \(writer.status.rawValue)")
+                ConversionLogger.debug("Writer unknown state: \(writer.status.rawValue)")
                 throw ConversionError.exportFailed("Unknown writer state: \(writer.status.rawValue)")
             }
         } else {
@@ -524,7 +488,7 @@ final class VideoConversionService {
             options.deliveryMode = .highQualityFormat
             PHImageManager.default().requestAVAsset(forVideo: phAsset, options: options) { asset, _, info in
                 if let error = info?[PHImageErrorKey] as? Error {
-                    print("[VideoConversionService] Load asset error: \(error.localizedDescription)")
+                    ConversionLogger.error("Load asset error: \(error.localizedDescription)")
                     cont.resume(throwing: error)
                 } else if let asset {
                     cont.resume(returning: asset)
@@ -533,115 +497,5 @@ final class VideoConversionService {
                 }
             }
         }
-    }
-
-    // MARK: - Stats Logging
-
-    private func printStats(input asset: AVAsset, sourceAsset: VideoAsset, label: String, inputBitrate: Int, targetBitrate: Int) {
-        Task {
-            do {
-                let tracks = try await asset.loadTracks(withMediaType: .video)
-                guard let videoTrack = tracks.first else { return }
-
-                let codec = await getCodecName(from: videoTrack)
-                let frameRate = try await videoTrack.load(.nominalFrameRate)
-                let naturalSize = try await videoTrack.load(.naturalSize)
-                let duration = try await asset.load(.duration)
-
-                let durationSecs = duration.seconds
-                let bitrate = durationSecs > 0 ? Double(sourceAsset.fileSize * 8) / durationSecs : 0
-
-                print("""
-                    [VideoConversionService] ═══ \(label) ═══
-                    Codec: \(codec)
-                    Resolution: \(Int(naturalSize.width))×\(Int(naturalSize.height))
-                    FPS: \(String(format: "%.2f", frameRate))
-                    Duration: \(formatDuration(durationSecs))
-                    File Size: \(formatBytes(sourceAsset.fileSize))
-                    Bitrate: \(formatBitrate(bitrate))
-                    Target Bitrate: \(formatBitrate(Double(targetBitrate))) (65% of input)
-                    ═══════════════════════════════════
-                    """)
-            } catch {
-                print("[VideoConversionService] Failed to load input stats: \(error)")
-            }
-        }
-    }
-
-    private func printStats(url: URL, label: String) {
-        let asset = AVURLAsset(url: url)
-        Task {
-            do {
-                let fileSize = try FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int64 ?? 0
-                let tracks = try await asset.loadTracks(withMediaType: .video)
-                guard let videoTrack = tracks.first else { return }
-
-                let codec = await getCodecName(from: videoTrack)
-                let frameRate = try await videoTrack.load(.nominalFrameRate)
-                let naturalSize = try await videoTrack.load(.naturalSize)
-                let duration = try await asset.load(.duration)
-
-                let durationSecs = duration.seconds
-                let bitrate = durationSecs > 0 ? Double(fileSize * 8) / durationSecs : 0
-
-                print("""
-                    [VideoConversionService] ═══ \(label) ═══
-                    Codec: \(codec)
-                    Resolution: \(Int(naturalSize.width))×\(Int(naturalSize.height))
-                    FPS: \(String(format: "%.2f", frameRate))
-                    Duration: \(formatDuration(durationSecs))
-                    File Size: \(formatBytes(fileSize))
-                    Bitrate: \(formatBitrate(bitrate))
-                    ═══════════════════════════════════
-                    """)
-            } catch {
-                print("[VideoConversionService] Failed to load output stats: \(error)")
-            }
-        }
-    }
-
-    private func getCodecName(from track: AVAssetTrack) async -> String {
-        let formatDescriptions = try? await track.load(.formatDescriptions)
-        guard let desc = formatDescriptions?.first else { return "Unknown" }
-
-        let mediaSubType = CMFormatDescriptionGetMediaSubType(desc)
-        switch mediaSubType {
-        case kCMVideoCodecType_H264:           return "H.264"
-        case kCMVideoCodecType_HEVC:          return "HEVC"
-        case kCMVideoCodecType_MPEG4Video:    return "MPEG-4"
-        case kCMVideoCodecType_AppleProRes422: return "ProRes 422"
-        case kCMVideoCodecType_AppleProRes4444: return "ProRes 4444"
-        default:
-            let bytes: [UInt8] = [
-                UInt8((mediaSubType >> 24) & 0xFF),
-                UInt8((mediaSubType >> 16) & 0xFF),
-                UInt8((mediaSubType >>  8) & 0xFF),
-                UInt8((mediaSubType      ) & 0xFF),
-            ]
-            return String(bytes: bytes, encoding: .ascii)?.trimmingCharacters(in: .whitespaces) ?? "Unknown"
-        }
-    }
-
-    private func formatBytes(_ bytes: Int64) -> String {
-        return ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
-    }
-
-private func formatDuration(_ seconds: Double) -> String {
-        let h = Int(seconds) / 3600
-        let m = (Int(seconds) % 3600) / 60
-        let s = Int(seconds) % 60
-        if h > 0 {
-            return String(format: "%d:%02d:%02d", h, m, s)
-        }
-        return String(format: "%d:%02d", m, s)
-    }
-    
-    private func formatBitrate(_ bitsPerSecond: Double) -> String {
-        if bitsPerSecond >= 1_000_000 {
-            return String(format: "%.1f Mbps", bitsPerSecond / 1_000_000)
-        } else if bitsPerSecond >= 1_000 {
-            return String(format: "%.0f kbps", bitsPerSecond / 1_000)
-        }
-        return String(format: "%.0f bps", bitsPerSecond)
     }
 }

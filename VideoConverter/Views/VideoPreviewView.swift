@@ -85,13 +85,18 @@ struct VideoPreviewView: View {
     }
 
     private func loadVideo() async {
+        guard let phAsset = asset.phAsset else {
+            isLoading = false
+            return
+        }
+        
         let opts = PHVideoRequestOptions()
         opts.version = .current
         opts.deliveryMode = .highQualityFormat
         opts.isNetworkAccessAllowed = true
 
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-            PHImageManager.default().requestAVAsset(forVideo: asset.phAsset, options: opts) { avAsset, _, _ in
+            PHImageManager.default().requestAVAsset(forVideo: phAsset, options: opts) { avAsset, _, _ in
                 if let avAsset {
                     let playerItem = AVPlayerItem(asset: avAsset)
                     DispatchQueue.main.async {

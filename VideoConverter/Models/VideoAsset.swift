@@ -8,7 +8,7 @@ import CoreLocation
 /// A non-HEVC video found in the user's photo library.
 struct VideoAsset: Identifiable, Hashable, Sendable {
     let id: String                          // PHAsset.localIdentifier
-    let phAsset: PHAsset
+    let phAsset: PHAsset?
     let filename: String
     let fileSize: Int64
     let duration: TimeInterval
@@ -22,6 +22,36 @@ struct VideoAsset: Identifiable, Hashable, Sendable {
 
     static func == (lhs: VideoAsset, rhs: VideoAsset) -> Bool { lhs.id == rhs.id }
     func hash(into hasher: inout Hasher) { hasher.combine(id) }
+    
+    init(from cached: CachedVideoAsset, phAsset: PHAsset? = nil) {
+        self.id = cached.id
+        self.phAsset = phAsset
+        self.filename = cached.filename
+        self.fileSize = cached.fileSize
+        self.duration = cached.duration
+        self.creationDate = cached.creationDate
+        self.modificationDate = cached.modificationDate
+        self.resolution = cached.resolution
+        self.frameRate = cached.frameRate
+        self.codec = cached.codec
+        self.locationCoordinate = cached.locationCoordinate
+        self.isFavorite = cached.isFavorite
+    }
+    
+    init(id: String, phAsset: PHAsset?, filename: String, fileSize: Int64, duration: TimeInterval, creationDate: Date?, modificationDate: Date?, resolution: CGSize, frameRate: Double, codec: String, locationCoordinate: CLLocationCoordinate2D?, isFavorite: Bool) {
+        self.id = id
+        self.phAsset = phAsset
+        self.filename = filename
+        self.fileSize = fileSize
+        self.duration = duration
+        self.creationDate = creationDate
+        self.modificationDate = modificationDate
+        self.resolution = resolution
+        self.frameRate = frameRate
+        self.codec = codec
+        self.locationCoordinate = locationCoordinate
+        self.isFavorite = isFavorite
+    }
 }
 
 // MARK: - Computed display helpers

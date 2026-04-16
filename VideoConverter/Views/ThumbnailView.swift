@@ -3,14 +3,15 @@
 
 import SwiftUI
 import Photos
+import UIKit
 
 /// Async thumbnail loaded from PHImageManager with a shimmer placeholder.
 struct ThumbnailView: View {
-    let asset: PHAsset
+    let asset: PHAsset?
     var size: CGSize = CGSize(width: 80, height: 60)
 
     @State private var image: UIImage?
-    @State private var loading = true
+    @State private var loading = false
 
     private var cornerRadius: CGFloat { 8 }
 
@@ -34,13 +35,16 @@ struct ThumbnailView: View {
                     .shimmer(loading)
             }
         }
-        .task(id: asset.localIdentifier) {
-            image = await loadThumbnail()
-            loading = false
+        .task {
+            if let asset {
+                loading = true
+                image = await loadThumbnail(from: asset)
+                loading = false
+            }
         }
     }
 
-    private func loadThumbnail() async -> UIImage? {
+    private func loadThumbnail(from asset: PHAsset) async -> UIImage? {
         await withCheckedContinuation { cont in
             let targetSize = CGSize(width: size.width * 3, height: size.height * 3)
             let opts = PHImageRequestOptions()
@@ -56,7 +60,6 @@ struct ThumbnailView: View {
             ) { img, info in
                 let isDegraded = info?[PHImageResultIsDegradedKey] as? Bool ?? false
                 if !isDegraded { cont.resume(returning: img) }
-                // If degraded, wait for the next callback (opportunistic mode delivers twice)
             }
         }
     }

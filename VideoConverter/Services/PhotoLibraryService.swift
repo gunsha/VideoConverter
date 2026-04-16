@@ -55,9 +55,11 @@ final class PhotoLibraryService: NSObject, PHPhotoLibraryChangeObserver {
             }
             var assets: [VideoAsset] = []
             for await result in group {
-                count += 1
-                progressHandler?(count)
-                if let asset = result { assets.append(asset) }
+                if let asset = result {
+                    count += 1
+                    progressHandler?(count)
+                    assets.append(asset)
+                }
             }
             return assets.sorted { ($0.creationDate ?? .distantPast) > ($1.creationDate ?? .distantPast) }
         }

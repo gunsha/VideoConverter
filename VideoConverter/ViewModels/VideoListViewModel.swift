@@ -24,13 +24,70 @@ final class VideoListViewModel {
         }
     }
 
+    // MARK: - Filters
+    enum SizeRange: String, CaseIterable, Identifiable {
+        case all = "All Sizes"
+        case sd = "SD (<720p)"
+        case hd = "HD (720p-1080p)"
+        case fhd = "Full HD (1080p)"
+        case uhd = "4K (2160p)"
+        
+        var id: String { rawValue }
+        
+        var range: ClosedRange<Int>? {
+            switch self {
+            case .all: return nil
+            case .sd: return 0...719
+            case .hd: return 720...1079
+            case .fhd: return 1080...1080
+            case .uhd: return 2160...4320
+            }
+        }
+    }
+    
+    struct FPSFilterOption: Hashable, Identifiable {
+        let fps: Double
+        var id: Double { fps }
+        
+        var label: String {
+            "\(Int(fps)) FPS"
+        }
+        
+        static let standardValues: [Double] = [24, 25, 30, 60]
+        
+        static func range(for fps: Double) -> ClosedRange<Double>? {
+            switch fps {
+            case 24: return 0...24
+            case 25: return 24.001...25
+            case 30: return 25.001...30
+            case 60: return 30.001...60
+            default: return nil
+            }
+        }
+    }
+    
+    static let fpsFilterAll = FPSFilterOption(fps: 0)
+    
     // MARK: - State
-    var videos: [VideoAsset] = []
+    private var rawVideos: [VideoAsset] = []
+    var videos: [VideoAsset] {
+        filtered
+    }
+    private var filtered: [VideoAsset] = []
+    
     var isLoading = false
     var isRefreshing = false
     var discoveredCount: Int = 0
     var authorizationStatus: PHAuthorizationStatus = PHPhotoLibrary.authorizationStatus(for: .readWrite)
     var sortOrder: SortOrder = .date { didSet { applySortOrder() } }
+    var sizeFilter: SizeRange = .all { didSet { applyFilters() } }
+    var fpsFilter: FPSFilterOption? = nil {
+        didSet {
+            applyFilters()
+            generateFPSOptions()
+        }
+    }
+    var availableFPSOptions: [FPSFilterOption] = []
     var error: String?
 
     // MARK: - Dependencies
@@ -58,7 +115,9 @@ final class VideoListViewModel {
         }
 
         if let cached = await loadFromCache() {
-            videos = cached
+            rawVideos = cached
+            applyFilters()
+            generateFPSOptions()
             isLoading = false
             Task {
                 await refreshInBackground()
@@ -79,13 +138,7 @@ final class VideoListViewModel {
     private func loadFromCache() async -> [VideoAsset]? {
         guard let cache = await cacheService.load() else { return nil }
 
-        var cachedVideos: [VideoAsset] = []
-        for cached in cache.assets {
-            if let asset = await photoLibraryService.fetchVideoAsset(by: cached.id) {
-                cachedVideos.append(asset)
-            }
-        }
-
+        let cachedVideos = cache.assets.map { VideoAsset(from: $0) }
         if cachedVideos.isEmpty { return nil }
         return sorted(cachedVideos, by: sortOrder)
     }
@@ -100,7 +153,9 @@ final class VideoListViewModel {
             }
         }
 
-        videos = sorted(fetched, by: sortOrder)
+        rawVideos = fetched
+        applyFilters()
+        generateFPSOptions()
         isLoading = false
         isRefreshing = false
 
@@ -120,8 +175,30 @@ final class VideoListViewModel {
         await cacheService.clear()
     }
 
+    private func applyFilters() {
+        var result = rawVideos
+        
+        if let sizeRange = sizeFilter.range {
+            result = result.filter { sizeRange.contains(Int($0.resolution.height)) }
+        }
+        
+        if let fps = fpsFilter?.fps, fps > 0, let range = FPSFilterOption.range(for: fps) {
+            result = result.filter { range.contains($0.frameRate) }
+        }
+        
+        filtered = sorted(result, by: sortOrder)
+    }
+
+    private func generateFPSOptions() {
+        let rawFrameRates = Set(rawVideos.map { $0.frameRate })
+        let availableStandard = FPSFilterOption.standardValues.filter { standard in
+            rawFrameRates.contains { $0 <= standard || (standard == 24 && $0 <= 24) }
+        }
+        availableFPSOptions = [Self.fpsFilterAll] + availableStandard.map { FPSFilterOption(fps: $0) }
+    }
+
     private func applySortOrder() {
-        videos = sorted(videos, by: sortOrder)
+        applyFilters()
     }
 
     private func sorted(_ assets: [VideoAsset], by order: SortOrder) -> [VideoAsset] {

@@ -131,6 +131,38 @@ struct VideoListView: View {
             .disabled(listVM.isLoading || listVM.isRefreshing)
         }
 
+        // Filter menu
+        ToolbarItem(placement: .topBarLeading) {
+            Menu {
+                Section("Size") {
+                    Picker("Size", selection: $listVM.sizeFilter) {
+                        ForEach(VideoListViewModel.SizeRange.allCases) { range in
+                            Text(range.rawValue).tag(range)
+                        }
+                    }
+                    .pickerStyle(.inline)
+                    .labelsHidden()
+                }
+                Section("Frame Rate") {
+                    Picker("FPS", selection: $listVM.fpsFilter) {
+                        Text("All").tag(nil as VideoListViewModel.FPSFilterOption?)
+                        ForEach(listVM.availableFPSOptions.filter { $0.fps > 0 }) { option in
+                            Text(option.label).tag(option as VideoListViewModel.FPSFilterOption?)
+                        }
+                    }
+                }
+                if listVM.sizeFilter != .all || listVM.fpsFilter != nil {
+                    Divider()
+                    Button("Clear Filters") {
+                        listVM.sizeFilter = .all
+                        listVM.fpsFilter = nil
+                    }
+                }
+            } label: {
+                Label("Filter", systemImage: listVM.sizeFilter != .all || listVM.fpsFilter != nil ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
+            }
+        }
+
         // Sort menu
         ToolbarItem(placement: .topBarLeading) {
             Menu {

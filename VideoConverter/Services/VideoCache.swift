@@ -65,31 +65,46 @@ final class VideoCacheService: @unchecked Sendable {
     private let cacheFileName = "video_cache.json"
 
     private var cacheURL: URL? {
-        fileManager.urls(for: .cachesDirectory, in: .userDomainMask).first?.appendingPathComponent(cacheFileName)
+        fileManager.urls(for: .documentDirectory, in: .userDomainMask).first?.appendingPathComponent(cacheFileName)
     }
 
     func load() async -> VideoCache? {
-        guard let url = cacheURL else { return nil }
-        guard fileManager.fileExists(atPath: url.path) else { return nil }
+        guard let url = cacheURL else { 
+            print("[VideoCache] No cache URL available")
+            return nil 
+        }
+        guard fileManager.fileExists(atPath: url.path) else { 
+            print("[VideoCache] Cache file does not exist at: \(url.path)")
+            return nil 
+        }
 
         do {
             let data = try Data(contentsOf: url)
-            return try JSONDecoder().decode(VideoCache.self, from: data)
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
+            let cache = try decoder.decode(VideoCache.self, from: data)
+            print("[VideoCache] Loaded \(cache.assets.count) cached assets")
+            return cache
         } catch {
+            print("[VideoCache] Failed to decode cache: \(error)")
             return nil
         }
     }
 
     func save(_ cache: VideoCache) async {
-        guard let url = cacheURL else { return }
+        guard let url = cacheURL else { 
+            print("[VideoCache] No cache URL for save")
+            return 
+        }
 
         do {
             let encoder = JSONEncoder()
             encoder.dateEncodingStrategy = .iso8601
             let data = try encoder.encode(cache)
             try data.write(to: url, options: .atomic)
+            print("[VideoCache] Saved \(cache.assets.count) assets to: \(url.path)")
         } catch {
-            // Silently fail - cache is non-critical
+            print("[VideoCache] Failed to save cache: \(error)")
         }
     }
 
