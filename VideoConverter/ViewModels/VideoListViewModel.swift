@@ -119,9 +119,6 @@ final class VideoListViewModel {
             applyFilters()
             generateFPSOptions()
             isLoading = false
-            Task {
-                await refreshInBackground()
-            }
             return
         }
 

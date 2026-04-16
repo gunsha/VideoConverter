@@ -19,9 +19,9 @@ final class StorageAnalysisViewModel {
     }
 
     func onAppear() async {
-        if analysis == nil {
-            analysis = await service.loadCached()
-        }
+        print("[StorageAnalysisViewModel] onAppear, analysis is nil: \(analysis == nil)")
+        analysis = await service.loadCached()
+        print("[StorageAnalysisViewModel] after loadCached, analysis = \(analysis != nil)")
     }
 
     func requestAuthorization() async {

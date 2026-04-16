@@ -101,6 +101,7 @@ struct StorageAnalysisView: View {
                         iconColor: .orange,
                         title: "Videos (HEVC)",
                         subtitle: "Already optimized",
+                        count: analysis.hevcVideoCount,
                         bytes: analysis.hevcVideoBytes
                     )
                     Divider().padding(.leading, 52)
@@ -110,6 +111,7 @@ struct StorageAnalysisView: View {
                         iconColor: .blue,
                         title: "Videos (Other)",
                         subtitle: "Can be converted",
+                        count: analysis.nonHevcVideoCount,
                         bytes: analysis.nonHevcVideoBytes
                     )
                     Divider().padding(.leading, 52)
@@ -119,6 +121,7 @@ struct StorageAnalysisView: View {
                         iconColor: .purple,
                         title: "Live Photos",
                         subtitle: "Photos with motion",
+                        count: analysis.livePhotoCount,
                         bytes: analysis.livePhotoBytes
                     )
                     Divider().padding(.leading, 52)
@@ -128,6 +131,7 @@ struct StorageAnalysisView: View {
                         iconColor: .green,
                         title: "Photos",
                         subtitle: "Static images",
+                        count: analysis.photoCount,
                         bytes: analysis.photoBytes
                     )
                 }
@@ -145,13 +149,16 @@ struct StorageAnalysisView: View {
     }
 
     private func totalCard(_ analysis: StorageAnalysis) -> some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 4) {
             Text("Total")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
             Text(ByteCountFormatter.string(fromByteCount: analysis.totalBytes, countStyle: .file))
                 .font(.system(size: 36, weight: .bold, design: .rounded).monospacedDigit())
                 .foregroundStyle(.primary)
+            Text("\(analysis.totalCount) items")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 24)
@@ -159,7 +166,7 @@ struct StorageAnalysisView: View {
         .clipShape(RoundedRectangle(cornerRadius: 12))
     }
 
-    private func categoryRow(icon: String, iconColor: Color, title: String, subtitle: String, bytes: Int64) -> some View {
+    private func categoryRow(icon: String, iconColor: Color, title: String, subtitle: String, count: Int, bytes: Int64) -> some View {
         HStack(spacing: 12) {
             Image(systemName: icon)
                 .font(.title2)
@@ -167,8 +174,13 @@ struct StorageAnalysisView: View {
                 .frame(width: 32)
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(.body)
+                HStack(spacing: 6) {
+                    Text(title)
+                        .font(.body)
+                    Text("(\(count))")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
                 Text(subtitle)
                     .font(.caption)
                     .foregroundStyle(.secondary)
