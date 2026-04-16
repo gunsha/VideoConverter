@@ -13,5 +13,6 @@ struct ContentView: View {
     ContentView()
         .environment(VideoListViewModel(photoLibraryService: PhotoLibraryService()))
         .environment(ConversionViewModel())
+        .environment(StorageAnalysisViewModel())
 }
 

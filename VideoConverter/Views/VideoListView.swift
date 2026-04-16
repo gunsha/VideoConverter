@@ -11,6 +11,7 @@ struct VideoListView: View {
     @State private var settingsTarget: VideoAsset?      // tapped single video
     @State private var previewingAsset: VideoAsset?
     @State private var showingProgress = false
+    @State private var showingStorageAnalysis = false
     @State private var resultJob: ConversionJob?        // completed job overlay
 
     var body: some View {
@@ -27,6 +28,10 @@ struct VideoListView: View {
         // Progress sheet
         .sheet(isPresented: $conversionVM.showingProgress) {
             ConversionProgressView(viewModel: conversionVM)
+        }
+        // Storage analysis sheet
+        .sheet(isPresented: $showingStorageAnalysis) {
+            StorageAnalysisView()
         }
         // Video preview
         .fullScreenCover(item: $previewingAsset) { asset in
@@ -190,6 +195,15 @@ struct VideoListView: View {
                         .symbolEffect(.rotate, isActive: conversionVM.hasActiveWork)
                         .foregroundStyle(conversionVM.hasActiveWork ? Color.accentColor : .secondary)
                 }
+            }
+        }
+
+        // Storage analysis button
+        ToolbarItem(placement: .topBarTrailing) {
+            Button {
+                showingStorageAnalysis = true
+            } label: {
+                Label("Storage", systemImage: "chart.pie")
             }
         }
     }
