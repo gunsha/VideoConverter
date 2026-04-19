@@ -87,7 +87,7 @@ final class VideoConversionService {
                 let opts = PHAssetResourceCreationOptions()
                 let stem = (originalAsset.filename as NSString).deletingPathExtension
                 let ext  = (originalAsset.filename as NSString).pathExtension
-                opts.originalFilename = "\(stem)_HEVC.\(ext.isEmpty ? "mov" : ext)"
+                opts.originalFilename = "\(stem).\(ext.isEmpty ? "mov" : ext)"
 
                 let request = PHAssetCreationRequest.forAsset()
                 request.addResource(with: .video, fileURL: url, options: opts)
@@ -324,6 +324,9 @@ final class VideoConversionService {
         let videoInput = AVAssetWriterInput(mediaType: .video, outputSettings: videoSettings)
         videoInput.expectsMediaDataInRealTime = false
         videoInput.transform = transform
+        
+        // Copy track-level metadata for the video track (includes lens info)
+        videoInput.metadata = try await MetadataService.extractTrackMetadata(from: asset)
 
         let pixelBufferAdaptor = AVAssetWriterInputPixelBufferAdaptor(
             assetWriterInput: videoInput,

@@ -49,23 +49,34 @@ struct ConversionSettingsView: View {
         }
         return Int(Double(inputBitrate) * (bitratePercent / 100.0))
     }
+    
+    private var recommendedBitrateText: String {
+        if selectedResolution.height >= 2160 {
+            return "8 Mbps"
+        } else if selectedResolution.height >= 1080 {
+            return "4 Mbps"
+        } else if selectedResolution.height >= 720 {
+            return "2 Mbps"
+        } else {
+            return "lower"
+        }
+    }
 
     private var estimatedBytes: Int64 {
         if keepOriginalBitrate {
             return asset.fileSize
         }
-        return MetadataService.estimatedOutputBytes(
-            sourceBytes: asset.fileSize,
-            sourceResolution: asset.resolution,
-            sourceFPS: asset.frameRate,
-            targetResolution: selectedResolution,
-            targetFPS: selectedFPS
-        )
+        
+        // Calculate estimated size based on actual target bitrate and duration
+        let adjustedFPS = min(selectedFPS, asset.frameRate)
+        let duration = asset.duration * (adjustedFPS / asset.frameRate)
+        
+        return MetadataService.estimateSize(bitrate: targetBitrate, durationSeconds: duration)
     }
 
     private var savings: Int {
-        guard asset.fileSize > 0 else { return 0 }
-        let saved = Double(asset.fileSize - max(estimatedBytes, 1)) / Double(asset.fileSize)
+        guard asset.fileSize > 0, estimatedBytes > 0 else { return 0 }
+        let saved = Double(asset.fileSize - estimatedBytes) / Double(asset.fileSize)
         return max(0, Int((saved * 100).rounded()))
     }
 
@@ -159,7 +170,7 @@ struct ConversionSettingsView: View {
 
                 // Frame rate picker
                 Section {
-                    ForEach(asset.frameRateOptions, id: \.self) { fps in
+                    ForEach(asset.frameRateOptions.filter { $0 <= asset.frameRate }, id: \.self) { fps in
                         HStack {
                             if abs(fps - asset.frameRate) < 0.5 {
                                 Text("Original (\(Int(fps)) fps)")
@@ -219,7 +230,9 @@ struct ConversionSettingsView: View {
                     if keepOriginalBitrate {
                         Text("Preserves the original bitrate. Only codec changes.")
                     } else {
-                        Text("Lower values = smaller files. 65% is recommended for good quality.")
+                        let fpsLabel = "\(Int(selectedFPS))fps"
+                        let resLabel = selectedResolution.height >= 2160 ? "4K" : "\(Int(selectedResolution.height))p"
+                        Text("\(recommendedBitrateText) recommended for \(resLabel) @ \(fpsLabel). Too low decreases quality.")
                     }
                 }
 

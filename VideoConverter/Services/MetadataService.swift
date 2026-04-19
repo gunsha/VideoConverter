@@ -44,14 +44,40 @@ struct MetadataService {
         return max(500_000, Int(resolution.width * resolution.height * frameRate * bppf))
     }
 
+    static func estimateSize(bitrate: Int, durationSeconds: Double) -> Int64 {
+        Int64(Double(bitrate) / 8.0 * durationSeconds)
+    }
+
+    static func estimateSize(bitrate: Int, frameCount: Int, fps: Double) -> Int64 {
+        let duration = Double(frameCount) / fps
+        return estimateSize(bitrate: bitrate, durationSeconds: duration)
+    }
+
     // MARK: - Metadata extraction
 
     /// Known QuickTime camera/lens metadata keys that need special handling
     private static let quickTimeCameraKeys: [String] = [
         "com.apple.quicktime.camera.lens_model",
         "com.apple.quicktime.camera.focal_length.35mm_equivalent",
-        "com.apple.quicktime.camera.lens_irisfnumber",
-        "com.apple.quicktime.camera.model"
+        "com.apple.quicktime.camera.lens_iris_aperture",
+        "com.apple.quicktime.camera.model",
+        "com.apple.quicktime.lens.model",
+        "com.apple.quicktime.lens.focal_length",
+        "com.apple.quicktime.lens.max_aperture",
+        "com.apple.quicktime.lens.min_aperture",
+        "com.apple.quicktime.camera.iso",
+        "com.apple.quicktime.camera.exposure_time",
+        "com.apple.quicktime.camera.brightness",
+    ]
+
+    private static let quickTimeCameraKeyVariants: [[String]] = [
+        ["com.apple.quicktime.camera.lens_model", "com.apple.quicktime.lens.model"],
+        ["com.apple.quicktime.camera.focal_length.35mm_equivalent"],
+        ["com.apple.quicktime.camera.lens_iris_aperture", "com.apple.quicktime.lens.max_aperture"],
+        ["com.apple.quicktime.camera.model"],
+        ["com.apple.quicktime.lens.focal_length"],
+        ["com.apple.quicktime.camera.iso"],
+        ["com.apple.quicktime.camera.exposure_time"],
     ]
 
     /// Extracts all metadata from an AVAsset and returns it for writing to a new file.
@@ -95,14 +121,24 @@ struct MetadataService {
                 guard let key = item.key as? String else { continue }
                 
                 if !existingKeys.contains(key) {
-                    // Check if this is a known QuickTime camera key that needs special handling
-                    if quickTimeCameraKeys.contains(key) {
+                    let keyNeedsRecreation = quickTimeCameraKeys.contains(key) || key.hasPrefix("com.apple.quicktime.lens.")
+                    
+                    if keyNeedsRecreation {
                         if let recreatedItem = await recreateQuickTimeMetadataItem(from: item) {
                             outputMetadata.append(recreatedItem)
-                            existingKeys.add(key)
+                        } else {
+                            outputMetadata.append(item)
                         }
+                        
+                        for variantGroup in quickTimeCameraKeyVariants {
+                            if variantGroup.contains(key) {
+                                for variant in variantGroup {
+                                    existingKeys.add(variant)
+                                }
+                            }
+                        }
+                        existingKeys.add(key)
                     } else {
-                        // Copy as-is for other track metadata
                         outputMetadata.append(item)
                         existingKeys.add(key)
                     }
@@ -158,5 +194,26 @@ struct MetadataService {
         item.dataType = dataType
         
         return item
+    }
+    
+    /// Extracts metadata specifically for track-level (video/audio track).
+    /// This includes lens, camera, and other device-specific metadata.
+    static func extractTrackMetadata(from asset: AVAsset) async throws -> [AVMetadataItem] {
+        var trackMetadata: [AVMetadataItem] = []
+        
+        guard let videoTrack = try await asset.loadTracks(withMediaType: .video).first else {
+            return trackMetadata
+        }
+        
+        let metadata = try await videoTrack.load(.metadata)
+        
+        for item in metadata {
+            // Convert to mutable so we can write it
+            if let mutableItem = item.copy() as? AVMetadataItem {
+                trackMetadata.append(mutableItem)
+            }
+        }
+        
+        return trackMetadata
     }
 }
