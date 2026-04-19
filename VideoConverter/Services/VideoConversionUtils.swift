@@ -127,6 +127,8 @@ enum VideoConversionUtils {
                 let durationSecs = duration.seconds
                 let bitrate = durationSecs > 0 ? Double(sourceAsset.fileSize * 8) / durationSecs : 0
 
+                let percent = inputBitrate > 0 ? (Double(targetBitrate) / Double(inputBitrate) * 100) : 0
+
                 ConversionLogger.stats("""
                     [VideoConversionService] ═══ INPUT ═══
                     Codec: \(codec)
@@ -135,7 +137,7 @@ enum VideoConversionUtils {
                     Duration: \(formatDuration(durationSecs))
                     File Size: \(formatBytes(sourceAsset.fileSize))
                     Bitrate: \(formatBitrate(bitrate))
-                    Target Bitrate: \(formatBitrate(Double(targetBitrate))) (65% of input)
+                    Target Bitrate: \(formatBitrate(Double(targetBitrate))) (\(String(format: "%.0f", percent))% of input)
                     ═══════════════════════════════════
                     """)
             } catch {

@@ -28,9 +28,9 @@ final class PhotoLibraryService: NSObject, PHPhotoLibraryChangeObserver {
         return status
     }
 
-    // MARK: - Fetch non-HEVC videos
+    // MARK: - Fetch all videos
 
-    func fetchNonHEVCVideos(progressHandler: (@Sendable (Int) -> Void)? = nil) async -> [VideoAsset] {
+    func fetchAllVideos(progressHandler: (@Sendable (Int) -> Void)? = nil) async -> [VideoAsset] {
         let phAssets = await Task.detached {
             let fetchOptions = PHFetchOptions()
             fetchOptions.predicate = NSPredicate(format: "mediaType == %d", PHAssetMediaType.video.rawValue)
@@ -86,20 +86,14 @@ final class PhotoLibraryService: NSObject, PHPhotoLibraryChangeObserver {
         guard let tracks = try? await avAsset.loadTracks(withMediaType: .video),
               let videoTrack = tracks.first else { return nil }
 
-        // Inspect codec to filter HEVC
         let formatDescriptions = (try? await videoTrack.load(.formatDescriptions)) ?? []
-        let isHEVC = formatDescriptions.contains {
-            let sub = CMFormatDescriptionGetMediaSubType($0)
-            return sub == kCMVideoCodecType_HEVC || sub == kCMVideoCodecType_HEVCWithAlpha
-        }
-        guard !isHEVC else { return nil }
-
         let codec = codecName(from: formatDescriptions.first)
         let frameRate = (try? await videoTrack.load(.nominalFrameRate)).map(Double.init) ?? 30.0
         let naturalSize = (try? await videoTrack.load(.naturalSize)) ?? CGSize(width: phAsset.pixelWidth, height: phAsset.pixelHeight)
+        let isHDR = videoTrack.hasMediaCharacteristic(.containsHDRVideo)
 
         let fileSize = await getVideoFileSize(for: phAsset)
-        let filename = phAsset.value(forKey: "preferredFilename") as? String ?? "video.mov"
+        let filename = avAsset.url.lastPathComponent
 
         return VideoAsset(
             id: phAsset.localIdentifier,
@@ -112,6 +106,7 @@ final class PhotoLibraryService: NSObject, PHPhotoLibraryChangeObserver {
             resolution: naturalSize,
             frameRate: frameRate,
             codec: codec,
+            isHDR: isHDR,
             locationCoordinate: phAsset.location?.coordinate,
             isFavorite: phAsset.isFavorite
         )

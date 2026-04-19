@@ -5,9 +5,8 @@ import Foundation
 import Photos
 import CoreLocation
 
-/// A non-HEVC video found in the user's photo library.
 struct VideoAsset: Identifiable, Hashable, Sendable {
-    let id: String                          // PHAsset.localIdentifier
+    let id: String
     let phAsset: PHAsset?
     let filename: String
     let fileSize: Int64
@@ -17,6 +16,7 @@ struct VideoAsset: Identifiable, Hashable, Sendable {
     let resolution: CGSize
     let frameRate: Double
     let codec: String
+    let isHDR: Bool
     let locationCoordinate: CLLocationCoordinate2D?
     let isFavorite: Bool
 
@@ -34,11 +34,12 @@ struct VideoAsset: Identifiable, Hashable, Sendable {
         self.resolution = cached.resolution
         self.frameRate = cached.frameRate
         self.codec = cached.codec
+        self.isHDR = cached.isHDR
         self.locationCoordinate = cached.locationCoordinate
         self.isFavorite = cached.isFavorite
     }
-    
-    init(id: String, phAsset: PHAsset?, filename: String, fileSize: Int64, duration: TimeInterval, creationDate: Date?, modificationDate: Date?, resolution: CGSize, frameRate: Double, codec: String, locationCoordinate: CLLocationCoordinate2D?, isFavorite: Bool) {
+
+    init(id: String, phAsset: PHAsset?, filename: String, fileSize: Int64, duration: TimeInterval, creationDate: Date?, modificationDate: Date?, resolution: CGSize, frameRate: Double, codec: String, isHDR: Bool, locationCoordinate: CLLocationCoordinate2D?, isFavorite: Bool) {
         self.id = id
         self.phAsset = phAsset
         self.filename = filename
@@ -49,12 +50,12 @@ struct VideoAsset: Identifiable, Hashable, Sendable {
         self.resolution = resolution
         self.frameRate = frameRate
         self.codec = codec
+        self.isHDR = isHDR
         self.locationCoordinate = locationCoordinate
         self.isFavorite = isFavorite
     }
 }
 
-// MARK: - Computed display helpers
 extension VideoAsset {
     var formattedFileSize: String {
         ByteCountFormatter.string(fromByteCount: fileSize, countStyle: .file)
@@ -81,7 +82,10 @@ extension VideoAsset {
         return fps
     }
 
-    /// Available downscale resolution options (≤ original), standard steps.
+    var isHEVC: Bool {
+        codec.lowercased().contains("hevc") || codec.lowercased().contains("hvc1")
+    }
+
     var resolutionOptions: [CGSize] {
         let standards: [CGSize] = [
             CGSize(width: 3840, height: 2160),
@@ -92,7 +96,6 @@ extension VideoAsset {
         return standards.filter { $0.width <= resolution.width && $0.height <= resolution.height }
     }
 
-    /// Available FPS options including original.
     var frameRateOptions: [Double] {
         var options: [Double] = [60, 30, 25, 24]
         if !options.contains(frameRate) {

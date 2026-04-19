@@ -11,11 +11,34 @@ struct ConversionSettingsView: View {
 
     @State private var selectedResolution: CGSize
     @State private var selectedFPS: Double
-    @State private var bitratePercent: Double = 65
+    @State private var bitratePercent: Double
 
     private var inputBitrate: Int {
         guard asset.duration > 0 else { return 2_000_000 }
         return max(Int(Double(asset.fileSize * 8) / asset.duration), 500_000)
+    }
+
+    private var defaultTargetBitrate: Int {
+        let height = asset.resolution.height
+        if height >= 1080 {
+            return 4_096_000
+        } else if height >= 720 {
+            return 2_048_000
+        } else {
+            return Int(Double(inputBitrate) * 0.65)
+        }
+    }
+
+    private var defaultBitratePercent: Double {
+        guard inputBitrate > 0 else { return 65 }
+        let height = asset.resolution.height
+        if height >= 1080 {
+            return min(65, Double(4_096_000) / Double(inputBitrate) * 100)
+        } else if height >= 720 {
+            return min(65, Double(2_048_000) / Double(inputBitrate) * 100)
+        } else {
+            return 65
+        }
     }
 
     private var targetBitrate: Int {
@@ -43,6 +66,19 @@ struct ConversionSettingsView: View {
         self.conversionVM = conversionVM
         _selectedResolution = State(initialValue: asset.resolution)
         _selectedFPS        = State(initialValue: asset.frameRate)
+
+        let height = asset.resolution.height
+        let sourceBitrate = max(Int(Double(asset.fileSize * 8) / max(asset.duration, 1)), 500_000)
+        let targetBitrate: Int
+        if height >= 1080 {
+            targetBitrate = 4_096_000
+        } else if height >= 720 {
+            targetBitrate = 2_048_000
+        } else {
+            targetBitrate = Int(Double(sourceBitrate) * 0.65)
+        }
+        let calculatedPercent = Double(targetBitrate) / Double(sourceBitrate) * 100
+        _bitratePercent = State(initialValue: min(calculatedPercent, 100))
     }
 
     var body: some View {
@@ -53,6 +89,14 @@ struct ConversionSettingsView: View {
                     LabeledContent("File", value: asset.filename)
                     LabeledContent("Original size", value: asset.formattedFileSize)
                     LabeledContent("Codec",  value: asset.codec)
+                    if asset.isHEVC {
+                        LabeledContent("Format", value: "HEVC")
+                    }
+                    if asset.isHDR {
+                        LabeledContent("HDR", value: "Yes")
+                    } else {
+                        LabeledContent("HDR", value: "No")
+                    }
                     LabeledContent("Resolution", value: asset.resolutionLabel)
                     LabeledContent("Frame rate", value: asset.frameRateLabel)
                 } header: { Text("Source Video") }

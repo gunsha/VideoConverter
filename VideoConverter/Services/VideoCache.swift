@@ -16,6 +16,7 @@ struct CachedVideoAsset: Codable, Identifiable, Hashable, Sendable {
     let resolutionHeight: Double
     let frameRate: Double
     let codec: String
+    let isHDR: Bool
     let latitude: Double?
     let longitude: Double?
     let isFavorite: Bool
@@ -40,6 +41,7 @@ struct CachedVideoAsset: Codable, Identifiable, Hashable, Sendable {
         self.resolutionHeight = asset.resolution.height
         self.frameRate = asset.frameRate
         self.codec = asset.codec
+        self.isHDR = asset.isHDR
         self.latitude = asset.locationCoordinate?.latitude
         self.longitude = asset.locationCoordinate?.longitude
         self.isFavorite = asset.isFavorite

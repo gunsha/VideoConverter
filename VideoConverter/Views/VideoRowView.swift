@@ -34,8 +34,8 @@ struct VideoRowView: View {
                     .foregroundStyle(.primary)
 
                 HStack(spacing: 6) {
-                    // Codec badge
-                    BadgeLabel(asset.codec, color: .orange)
+                    // Codec badge (green for HEVC, orange for others)
+                    BadgeLabel(asset.codec, color: asset.codec == "HEVC" ? .green : .orange)
                     // Resolution badge
                     BadgeLabel(asset.resolutionLabel, color: .blue)
                     // FPS
@@ -109,6 +109,7 @@ private extension VideoAsset {
         resolution: CGSize(width: 1920, height: 1080),
         frameRate: 30,
         codec: "H.264",
+        isHDR: false,
         locationCoordinate: nil,
         isFavorite: false
     )

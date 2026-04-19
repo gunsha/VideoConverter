@@ -132,6 +132,7 @@ private extension VideoPreviewView {
         resolution: CGSize(width: 1920, height: 1080),
         frameRate: 30,
         codec: "H.264",
+        isHDR: false,
         locationCoordinate: nil,
         isFavorite: false
     )

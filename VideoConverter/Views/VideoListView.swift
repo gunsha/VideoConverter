@@ -246,9 +246,9 @@ struct VideoListView: View {
 
     private var emptyStateView: some View {
         ContentUnavailableView(
-            "All Videos Are HEVC",
-            systemImage: "checkmark.seal.fill",
-            description: Text("Every video in your library is already in HEVC format. No conversion needed!")
+            "No Videos Found",
+            systemImage: "video.slash",
+            description: Text("No videos in your photo library.")
         )
     }
 

@@ -160,7 +160,7 @@ final class VideoListViewModel {
             return
         }
 
-        let fetched = await photoLibraryService.fetchNonHEVCVideos { [weak self] count in
+        let fetched = await photoLibraryService.fetchAllVideos { [weak self] count in
             Task { @MainActor [weak self] in
                 self?.discoveredCount = count
             }
