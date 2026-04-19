@@ -20,6 +20,11 @@ struct CachedVideoAsset: Codable, Identifiable, Hashable, Sendable {
     let latitude: Double?
     let longitude: Double?
     let isFavorite: Bool
+    let lensMake: String?
+    let lensModel: String?
+    let cameraMake: String?
+    let cameraModel: String?
+    let software: String?
 
     var resolution: CGSize {
         CGSize(width: resolutionWidth, height: resolutionHeight)
@@ -45,6 +50,11 @@ struct CachedVideoAsset: Codable, Identifiable, Hashable, Sendable {
         self.latitude = asset.locationCoordinate?.latitude
         self.longitude = asset.locationCoordinate?.longitude
         self.isFavorite = asset.isFavorite
+        self.lensMake = asset.lensMake
+        self.lensModel = asset.lensModel
+        self.cameraMake = asset.cameraMake
+        self.cameraModel = asset.cameraModel
+        self.software = asset.software
     }
 
     func toVideoAsset(photoLibraryService: PhotoLibraryService) async -> VideoAsset? {

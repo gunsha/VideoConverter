@@ -19,6 +19,11 @@ struct VideoAsset: Identifiable, Hashable, Sendable {
     let isHDR: Bool
     let locationCoordinate: CLLocationCoordinate2D?
     let isFavorite: Bool
+    let lensMake: String?
+    let lensModel: String?
+    let cameraMake: String?
+    let cameraModel: String?
+    let software: String?
 
     static func == (lhs: VideoAsset, rhs: VideoAsset) -> Bool { lhs.id == rhs.id }
     func hash(into hasher: inout Hasher) { hasher.combine(id) }
@@ -37,9 +42,14 @@ struct VideoAsset: Identifiable, Hashable, Sendable {
         self.isHDR = cached.isHDR
         self.locationCoordinate = cached.locationCoordinate
         self.isFavorite = cached.isFavorite
+        self.lensMake = cached.lensMake
+        self.lensModel = cached.lensModel
+        self.cameraMake = cached.cameraMake
+        self.cameraModel = cached.cameraModel
+        self.software = cached.software
     }
 
-    init(id: String, phAsset: PHAsset?, filename: String, fileSize: Int64, duration: TimeInterval, creationDate: Date?, modificationDate: Date?, resolution: CGSize, frameRate: Double, codec: String, isHDR: Bool, locationCoordinate: CLLocationCoordinate2D?, isFavorite: Bool) {
+    init(id: String, phAsset: PHAsset?, filename: String, fileSize: Int64, duration: TimeInterval, creationDate: Date?, modificationDate: Date?, resolution: CGSize, frameRate: Double, codec: String, isHDR: Bool, locationCoordinate: CLLocationCoordinate2D?, isFavorite: Bool, lensMake: String? = nil, lensModel: String? = nil, cameraMake: String? = nil, cameraModel: String? = nil, software: String? = nil) {
         self.id = id
         self.phAsset = phAsset
         self.filename = filename
@@ -53,6 +63,11 @@ struct VideoAsset: Identifiable, Hashable, Sendable {
         self.isHDR = isHDR
         self.locationCoordinate = locationCoordinate
         self.isFavorite = isFavorite
+        self.lensMake = lensMake
+        self.lensModel = lensModel
+        self.cameraMake = cameraMake
+        self.cameraModel = cameraModel
+        self.software = software
     }
 }
 

@@ -37,6 +37,8 @@ final class ConversionJob: Identifiable {
     let targetResolution: CGSize
     let targetFrameRate: Double
     let targetBitrate: Int?
+    let removeHDR: Bool
+    let keepOriginalBitrate: Bool
 
     var status: ConversionStatus = .pending
     var progress: Double = 0.0
@@ -50,12 +52,16 @@ final class ConversionJob: Identifiable {
         sourceAsset: VideoAsset,
         targetResolution: CGSize,
         targetFrameRate: Double,
-        targetBitrate: Int? = nil
+        targetBitrate: Int? = nil,
+        removeHDR: Bool = false,
+        keepOriginalBitrate: Bool = false
     ) {
         self.sourceAsset = sourceAsset
         self.targetResolution = targetResolution
         self.targetFrameRate = targetFrameRate
         self.targetBitrate = targetBitrate
+        self.removeHDR = removeHDR
+        self.keepOriginalBitrate = keepOriginalBitrate
     }
 
     // Estimated savings once done (only valid when outputFileSize is known)

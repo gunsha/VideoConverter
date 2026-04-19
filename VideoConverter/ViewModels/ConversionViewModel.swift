@@ -23,7 +23,7 @@ final class ConversionViewModel {
     // MARK: - Public API
 
     /// Enqueues a single job from ConversionSettingsView.
-    func enqueue(asset: VideoAsset, targetResolution: CGSize, targetFrameRate: Double, targetBitrate: Int? = nil) {
+    func enqueue(asset: VideoAsset, targetResolution: CGSize, targetFrameRate: Double, targetBitrate: Int? = nil, removeHDR: Bool = false, keepOriginalBitrate: Bool = false) {
         // Duplicate guard: skip if already queued or done
         guard !jobs.contains(where: { $0.sourceAsset.id == asset.id && !$0.status.isTerminal }) else { return }
 
@@ -31,7 +31,9 @@ final class ConversionViewModel {
             sourceAsset: asset,
             targetResolution: targetResolution,
             targetFrameRate: targetFrameRate,
-            targetBitrate: targetBitrate
+            targetBitrate: targetBitrate,
+            removeHDR: removeHDR,
+            keepOriginalBitrate: keepOriginalBitrate
         )
         jobs.append(job)
         showingProgress = true
@@ -39,10 +41,10 @@ final class ConversionViewModel {
     }
 
     /// Enqueues multiple jobs for batch conversion (uses original resolution/fps).
-    func enqueueBatch(assets: [VideoAsset]) {
+    func enqueueBatch(assets: [VideoAsset], removeHDR: Bool = false, keepOriginalBitrate: Bool = false) {
         let newJobs = assets
             .filter { a in !jobs.contains(where: { $0.sourceAsset.id == a.id && !$0.status.isTerminal }) }
-            .map { ConversionJob(sourceAsset: $0, targetResolution: $0.resolution, targetFrameRate: $0.frameRate) }
+            .map { ConversionJob(sourceAsset: $0, targetResolution: $0.resolution, targetFrameRate: $0.frameRate, removeHDR: removeHDR, keepOriginalBitrate: keepOriginalBitrate) }
         guard !newJobs.isEmpty else { return }
         jobs.append(contentsOf: newJobs)
         showingProgress = true

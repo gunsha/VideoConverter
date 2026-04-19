@@ -5,6 +5,7 @@ import Foundation
 import Photos
 import AVFoundation
 import CoreLocation
+import ImageIO
 
 // MARK: - PhotoLibraryService
 final class PhotoLibraryService: NSObject, PHPhotoLibraryChangeObserver {
@@ -93,7 +94,10 @@ final class PhotoLibraryService: NSObject, PHPhotoLibraryChangeObserver {
         let isHDR = videoTrack.hasMediaCharacteristic(.containsHDRVideo)
 
         let fileSize = await getVideoFileSize(for: phAsset)
-        let filename = avAsset.url.lastPathComponent
+        let filename = getFilename(for: phAsset)
+        
+        // Extract lens and camera metadata
+        let metadata = await extractLensMetadataFromAVAsset(avAsset)
 
         return VideoAsset(
             id: phAsset.localIdentifier,
@@ -108,17 +112,139 @@ final class PhotoLibraryService: NSObject, PHPhotoLibraryChangeObserver {
             codec: codec,
             isHDR: isHDR,
             locationCoordinate: phAsset.location?.coordinate,
-            isFavorite: phAsset.isFavorite
+            isFavorite: phAsset.isFavorite,
+            lensMake: metadata.lensMake,
+            lensModel: metadata.lensModel,
+            cameraMake: metadata.cameraMake,
+            cameraModel: metadata.cameraModel,
+            software: metadata.software
         )
+    }
+    
+    private nonisolated func extractLensMetadataFromAVAsset(_ avAsset: AVAsset) async -> (lensMake: String?, lensModel: String?, cameraMake: String?, cameraModel: String?, software: String?) {
+        var lensMake: String?
+        var lensModel: String?
+        var cameraMake: String?
+        var cameraModel: String?
+        var software: String?
+        
+        // Debug: Collect all metadata keys
+        var allMetadataKeys: [String] = []
+        
+        do {
+            // Try common metadata first
+            let commonMetadata = try await avAsset.load(.commonMetadata)
+            for item in commonMetadata {
+                guard let key = item.commonKey?.rawValue else { continue }
+                allMetadataKeys.append("common:\(key)")
+                let value = try? await item.load(.stringValue)
+                switch key {
+                case "make":
+                    if cameraMake == nil { cameraMake = value }
+                case "model":
+                    if cameraModel == nil { cameraModel = value }
+                case "software":
+                    if software == nil { software = value }
+                case "lensMake":
+                    if lensMake == nil { lensMake = value }
+                case "lensModel":
+                    if lensModel == nil { lensModel = value }
+                default:
+                    break
+                }
+            }
+            
+            // Also try QuickTime metadata
+            let quickTimeMetadata = try await avAsset.load(.metadata)
+            for item in quickTimeMetadata {
+                // Check by identifier
+                if let identifier = item.identifier {
+                    allMetadataKeys.append("qt:\(identifier.rawValue)")
+                    let value = try? await item.load(.stringValue)
+                    switch identifier {
+                    case .quickTimeMetadataMake:
+                        if cameraMake == nil { cameraMake = value }
+                    case .quickTimeMetadataModel:
+                        if cameraModel == nil { cameraModel = value }
+                    case .quickTimeMetadataSoftware:
+                        if software == nil { software = value }
+                    default:
+                        break
+                    }
+                }
+                
+                // Check by key string (for lens-specific keys)
+                if let key = item.key as? String {
+                    allMetadataKeys.append("key:\(key)")
+                    let value = try? await item.load(.stringValue)
+                    switch key {
+                    case "com.apple.quicktime.lens.make":
+                        if lensMake == nil { lensMake = value }
+                    case "com.apple.quicktime.lens.model":
+                        if lensModel == nil { lensModel = value }
+                    case "com.apple.quicktime.make":
+                        if cameraMake == nil { cameraMake = value }
+                    case "com.apple.quicktime.model":
+                        if cameraModel == nil { cameraModel = value }
+                    case "com.apple.quicktime.software":
+                        if software == nil { software = value }
+                    default:
+                        break
+                    }
+                }
+            }
+            
+            // Try video track metadata as well
+            if let videoTrack = try await avAsset.loadTracks(withMediaType: .video).first {
+                let trackMetadata = try await videoTrack.load(.metadata)
+                for item in trackMetadata {
+                    if let key = item.key as? String {
+                        allMetadataKeys.append("track:\(key)")
+                        let value = try? await item.load(.stringValue)
+                        switch key {
+                        case "com.apple.quicktime.camera.lens_model":
+                            if lensModel == nil { lensModel = value }
+                        case "com.apple.quicktime.lens.make":
+                            if lensMake == nil { lensMake = value }
+                        case "com.apple.quicktime.lens.model":
+                            if lensModel == nil { lensModel = value }
+                        case "com.apple.quicktime.make":
+                            if cameraMake == nil { cameraMake = value }
+                        case "com.apple.quicktime.model":
+                            if cameraModel == nil { cameraModel = value }
+                        case "com.apple.quicktime.software":
+                            if software == nil { software = value }
+                        default:
+                            break
+                        }
+                    }
+                }
+            }
+        } catch {
+            // Ignore errors
+        }
+        
+        return (lensMake, lensModel, cameraMake, cameraModel, software)
     }
 
     private nonisolated func loadAVURLAsset(for phAsset: PHAsset) async -> AVURLAsset? {
         await withCheckedContinuation { continuation in
             let options = PHVideoRequestOptions()
-            options.isNetworkAccessAllowed = false
-            options.deliveryMode = .fastFormat
+            options.isNetworkAccessAllowed = true
+            options.deliveryMode = .highQualityFormat
             PHImageManager.default().requestAVAsset(forVideo: phAsset, options: options) { avAsset, _, _ in
                 continuation.resume(returning: avAsset as? AVURLAsset)
+            }
+        }
+    }
+    
+    private nonisolated func loadAVAssetForMetadata(for phAsset: PHAsset) async -> AVAsset? {
+        await withCheckedContinuation { continuation in
+            let options = PHVideoRequestOptions()
+            options.isNetworkAccessAllowed = true
+            options.deliveryMode = .highQualityFormat
+            PHImageManager.default().requestAVAsset(forVideo: phAsset, options: options) { avAsset, _, _ in
+                continuation.resume(returning: avAsset)
             }
         }
     }
@@ -144,6 +270,17 @@ final class PhotoLibraryService: NSObject, PHPhotoLibraryChangeObserver {
                 }
             }
         }
+    }
+
+    private nonisolated func getFilename(for phAsset: PHAsset) -> String {
+        let resources = PHAssetResource.assetResources(for: phAsset)
+        if let videoResource = resources.first(where: { $0.type == .video }) {
+            return videoResource.originalFilename
+        }
+        if let resource = resources.first {
+            return resource.originalFilename
+        }
+        return "video_\(phAsset.localIdentifier)"
     }
 
     private nonisolated func codecName(from desc: CMFormatDescription?) -> String {

@@ -138,11 +138,16 @@ final class VideoConversionService {
         let durationSeconds = duration.seconds
 
         let inputBitrate = VideoConversionUtils.calculateBitrate(fileSize: job.sourceAsset.fileSize, duration: durationSeconds)
-        let targetBitrate = VideoConversionUtils.calculateTargetBitrate(
-            inputBitrate: inputBitrate,
-            targetBitrate: job.targetBitrate,
-            compressionRatio: 0.65
-        )
+        let targetBitrate: Int
+        if job.keepOriginalBitrate {
+            targetBitrate = inputBitrate
+        } else {
+            targetBitrate = VideoConversionUtils.calculateTargetBitrate(
+                inputBitrate: inputBitrate,
+                targetBitrate: job.targetBitrate,
+                compressionRatio: 0.65
+            )
+        }
 
         VideoConversionUtils.printInputStats(asset: avAsset, sourceAsset: job.sourceAsset, inputBitrate: inputBitrate, targetBitrate: targetBitrate)
 
@@ -157,7 +162,8 @@ final class VideoConversionService {
                 targetFPS: job.targetFrameRate,
                 targetBitrate: targetBitrate,
                 duration: durationSeconds,
-                progressHandler: progressHandler
+                progressHandler: progressHandler,
+                removeHDR: job.removeHDR
             )
         } else {
             try await exportWithAVAssetWriter(
@@ -167,7 +173,8 @@ final class VideoConversionService {
                 targetFPS: job.targetFrameRate,
                 targetBitrate: targetBitrate,
                 duration: durationSeconds,
-                progressHandler: progressHandler
+                progressHandler: progressHandler,
+                removeHDR: job.removeHDR
             )
         }
 
@@ -181,7 +188,8 @@ final class VideoConversionService {
         targetFPS: Double,
         targetBitrate: Int,
         duration: Double,
-        progressHandler: @escaping @MainActor (Double) -> Void
+        progressHandler: @escaping @MainActor (Double) -> Void,
+        removeHDR: Bool = false
     ) async throws {
         let videoTracks = try await asset.loadTracks(withMediaType: .video)
         guard let sourceVideoTrack = videoTracks.first else {
@@ -234,9 +242,29 @@ final class VideoConversionService {
 
         let reader = try AVAssetReader(asset: asset)
 
-        let videoReaderSettings: [String: Any] = [
-            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA
-        ]
+        let videoReaderSettings: [String: Any]
+        let pixelBufferAttributes: [String: Any]
+
+        if removeHDR {
+            videoReaderSettings = [
+                kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
+                kCVPixelBufferMetalCompatibilityKey as String: true
+            ]
+            pixelBufferAttributes = [
+                kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
+                kCVPixelBufferWidthKey as String: outputWidth,
+                kCVPixelBufferHeightKey as String: outputHeight
+            ]
+        } else {
+            videoReaderSettings = [
+                kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA
+            ]
+            pixelBufferAttributes = [
+                kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
+                kCVPixelBufferWidthKey as String: outputWidth,
+                kCVPixelBufferHeightKey as String: outputHeight
+            ]
+        }
 
         let videoOutput = AVAssetReaderTrackOutput(track: sourceVideoTrack, outputSettings: videoReaderSettings)
         videoOutput.alwaysCopiesSampleData = false
@@ -273,15 +301,8 @@ final class VideoConversionService {
         let writer = try AVAssetWriter(outputURL: outputURL, fileType: .mov)
         ConversionLogger.debug("Writer created at: \(outputURL.path)")
 
-        let sourceMetadata = try await asset.load(.metadata)
-        writer.metadata = sourceMetadata
-
-        let commonMetadata = try await asset.load(.commonMetadata)
-        if let cameraMake = commonMetadata.first(where: { $0.commonKey?.rawValue == "make" }) as? AVMetadataItem,
-           let cameraModel = commonMetadata.first(where: { $0.commonKey?.rawValue == "model" }) as? AVMetadataItem {
-            writer.metadata.append(cameraMake)
-            writer.metadata.append(cameraModel)
-        }
+        // Copy all available metadata from source to output
+        writer.metadata = try await MetadataService.extractAllMetadata(from: asset)
 
         var compressionProps: [String: Any] = [
             AVVideoAverageBitRateKey: targetBitrate,
@@ -304,11 +325,6 @@ final class VideoConversionService {
         videoInput.expectsMediaDataInRealTime = false
         videoInput.transform = transform
 
-        let pixelBufferAttributes: [String: Any] = [
-            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
-            kCVPixelBufferWidthKey as String: outputWidth,
-            kCVPixelBufferHeightKey as String: outputHeight
-        ]
         let pixelBufferAdaptor = AVAssetWriterInputPixelBufferAdaptor(
             assetWriterInput: videoInput,
             sourcePixelBufferAttributes: pixelBufferAttributes
@@ -316,6 +332,20 @@ final class VideoConversionService {
 
         if writer.canAdd(videoInput) {
             writer.add(videoInput)
+        }
+
+        var videoComposition: AVMutableVideoComposition?
+        if removeHDR {
+            compressionProps[kVTCompressionPropertyKey_PreserveDynamicHDRMetadata as String] = false
+
+            videoComposition = AVMutableVideoComposition(asset: asset) { request in
+                request.finish(with: request.sourceImage, context: nil)
+            }
+            videoComposition?.renderSize = CGSize(width: outputWidth, height: outputHeight)
+            videoComposition?.frameDuration = CMTime(value: 1, timescale: CMTimeScale(targetFPS))
+            videoComposition?.colorPrimaries = AVVideoColorPrimaries_ITU_R_709_2
+            videoComposition?.colorTransferFunction = AVVideoTransferFunction_ITU_R_709_2
+            videoComposition?.colorYCbCrMatrix = AVVideoYCbCrMatrix_ITU_R_709_2
         }
 
         var audioInput: AVAssetWriterInput?
@@ -374,11 +404,9 @@ final class VideoConversionService {
 
         videoGroup.enter()
         videoInput.requestMediaDataWhenReady(on: videoQueue) {
-            let adaptor = pixelBufferAdaptor
-
             while videoInput.isReadyForMoreMediaData {
                 autoreleasepool {
-                    if let sampleBuffer = videoOutput.copyNextSampleBuffer() {
+                    if let sourceSampleBuffer = videoOutput.copyNextSampleBuffer() {
                         framesRead += 1
 
                         // FIX: Accumulator-based frame skipping for even cadence.
@@ -406,14 +434,21 @@ final class VideoConversionService {
                         let presentationTime: CMTime
                         if fpsIsOriginal {
                             // No FPS change — preserve the original timestamps exactly.
-                            presentationTime = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+                            presentationTime = CMSampleBufferGetPresentationTimeStamp(sourceSampleBuffer)
                         } else {
                             // FPS conversion — assign sequential timestamps at targetFPS.
                             // This ensures the output plays at the correct speed.
                             presentationTime = CMTime(value: framesWritten, timescale: Int32(targetFPS))
                         }
 
-                        if let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) {
+                        // Get camera intrinsic matrix from source sample buffer attachment
+                        let cameraIntrinsicMatrix = CMGetAttachment(
+                            sourceSampleBuffer,
+                            key: kCMSampleBufferAttachmentKey_CameraIntrinsicMatrix,
+                            attachmentModeOut: nil
+                        )
+
+                        if let pixelBuffer = CMSampleBufferGetImageBuffer(sourceSampleBuffer) {
                             let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
                             let context = CIContext()
 
@@ -430,7 +465,17 @@ final class VideoConversionService {
                             if status == kCVReturnSuccess, let buffer = renderedBuffer {
                                 context.render(ciImage, to: buffer)
 
-                                if adaptor.append(buffer, withPresentationTime: presentationTime) {
+                                // Propagate camera intrinsic matrix to the rendered pixel buffer
+                                if let matrix = cameraIntrinsicMatrix {
+                                    CMSetAttachment(
+                                        buffer,
+                                        key: kCMSampleBufferAttachmentKey_CameraIntrinsicMatrix,
+                                        value: matrix,
+                                        attachmentMode: kCMAttachmentMode_ShouldPropagate
+                                    )
+                                }
+
+                                if pixelBufferAdaptor.append(buffer, withPresentationTime: presentationTime) {
                                     framesWritten += 1
                                     let progress = totalFrames > 0 ? min(Double(framesWritten) / Double(totalFrames), 1.0) : 0
                                     if Int(framesWritten) % max(1, totalFrames / 10) == 0 {

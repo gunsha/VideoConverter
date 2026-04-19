@@ -12,6 +12,8 @@ struct ConversionSettingsView: View {
     @State private var selectedResolution: CGSize
     @State private var selectedFPS: Double
     @State private var bitratePercent: Double
+    @State private var removeHDR: Bool = false
+    @State private var keepOriginalBitrate: Bool = false
 
     private var inputBitrate: Int {
         guard asset.duration > 0 else { return 2_000_000 }
@@ -42,11 +44,17 @@ struct ConversionSettingsView: View {
     }
 
     private var targetBitrate: Int {
-        Int(Double(inputBitrate) * (bitratePercent / 100.0))
+        if keepOriginalBitrate {
+            return inputBitrate
+        }
+        return Int(Double(inputBitrate) * (bitratePercent / 100.0))
     }
 
     private var estimatedBytes: Int64 {
-        MetadataService.estimatedOutputBytes(
+        if keepOriginalBitrate {
+            return asset.fileSize
+        }
+        return MetadataService.estimatedOutputBytes(
             sourceBytes: asset.fileSize,
             sourceResolution: asset.resolution,
             sourceFPS: asset.frameRate,
@@ -99,7 +107,30 @@ struct ConversionSettingsView: View {
                     }
                     LabeledContent("Resolution", value: asset.resolutionLabel)
                     LabeledContent("Frame rate", value: asset.frameRateLabel)
+                    if let cameraMake = asset.cameraMake {
+                        LabeledContent("Camera", value: cameraMake)
+                    }
+                    if let cameraModel = asset.cameraModel {
+                        LabeledContent("Camera model", value: cameraModel)
+                    }
+                    if let lensMake = asset.lensMake {
+                        LabeledContent("Lens make", value: lensMake)
+                    }
+                    if let lensModel = asset.lensModel {
+                        LabeledContent("Lens model", value: lensModel)
+                    }
+                    if let software = asset.software {
+                        LabeledContent("Software", value: software)
+                    }
                 } header: { Text("Source Video") }
+
+                if asset.isHDR {
+                    Section {
+                        Toggle("Remove HDR", isOn: $removeHDR)
+                    } header: { Text("HDR") } footer: {
+                        Text("Removes HDR metadata and tone-maps to SDR Rec.709 for better compatibility.")
+                    }
+                }
 
                 // Resolution picker
                 Section {
@@ -150,38 +181,46 @@ struct ConversionSettingsView: View {
 
                 // Bitrate picker
                 Section {
-                    VStack(alignment: .leading, spacing: 12) {
-                        HStack {
-                            Text("\(Int(bitratePercent))%")
-                                .font(.title3)
-                                .fontWeight(.semibold)
-                                .monospacedDigit()
-                            Spacer()
-                            Text(formatBitrate(targetBitrate))
-                                .foregroundStyle(.secondary)
-                                .monospacedDigit()
-                        }
+                    Toggle("Keep original bitrate", isOn: $keepOriginalBitrate)
 
-                        Slider(
-                            value: $bitratePercent,
-                            in: 10...100,
-                            step: 5
-                        )
-                        .labelsHidden()
+                    if !keepOriginalBitrate {
+                        VStack(alignment: .leading, spacing: 12) {
+                            HStack {
+                                Text("\(Int(bitratePercent))%")
+                                    .font(.title3)
+                                    .fontWeight(.semibold)
+                                    .monospacedDigit()
+                                Spacer()
+                                Text(formatBitrate(targetBitrate))
+                                    .foregroundStyle(.secondary)
+                                    .monospacedDigit()
+                            }
 
-                        HStack {
-                            Text("10%")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                            Spacer()
-                            Text("\(formatBitrate(inputBitrate))")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                            Slider(
+                                value: $bitratePercent,
+                                in: 10...100,
+                                step: 5
+                            )
+                            .labelsHidden()
+
+                            HStack {
+                                Text("10%")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                Spacer()
+                                Text("\(formatBitrate(inputBitrate))")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
                         }
+                        .padding(.vertical, 4)
                     }
-                    .padding(.vertical, 4)
                 } header: { Text("Target Bitrate") } footer: {
-                    Text("Lower values = smaller files. 65% is recommended for good quality.")
+                    if keepOriginalBitrate {
+                        Text("Preserves the original bitrate. Only codec changes.")
+                    } else {
+                        Text("Lower values = smaller files. 65% is recommended for good quality.")
+                    }
                 }
 
                 // Estimate
@@ -212,7 +251,9 @@ struct ConversionSettingsView: View {
                             asset: asset,
                             targetResolution: selectedResolution,
                             targetFrameRate: selectedFPS,
-                            targetBitrate: targetBitrate
+                            targetBitrate: targetBitrate,
+                            removeHDR: removeHDR,
+                            keepOriginalBitrate: keepOriginalBitrate
                         )
                         dismiss()
                     }
