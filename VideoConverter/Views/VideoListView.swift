@@ -168,7 +168,7 @@ struct VideoListView: View {
                     }
                 }
             } label: {
-                Label("Filter", systemImage: listVM.sizeFilter != .all || listVM.fpsFilter != nil ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
+                Label("Filter", systemImage: listVM.sizeFilter != .all || listVM.fpsFilter != nil ? "slider.horizontal.3" : "slider.horizontal.3")
             }
         }
 

@@ -40,6 +40,10 @@ struct VideoRowView: View {
                     BadgeLabel(asset.resolutionLabel, color: .blue)
                     // FPS
                     BadgeLabel(asset.frameRateLabel, color: .purple)
+                    // HDR badge
+                    if let hdr = asset.hdrLabel {
+                        BadgeLabel(hdr, color: .cyan)
+                    }
                 }
 
                 HStack(spacing: 8) {
@@ -59,7 +63,7 @@ struct VideoRowView: View {
             Spacer()
 
             // Selection checkmark
-            Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+            Image(systemName: isSelected ? "checkmark.circle.fill" : "chevron.right")
                 .font(.title3)
                 .foregroundStyle(isSelected ? Color.accentColor : Color(.systemGray4))
                 .animation(.spring(duration: 0.2), value: isSelected)

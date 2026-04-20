@@ -101,6 +101,10 @@ extension VideoAsset {
         codec.lowercased().contains("hevc") || codec.lowercased().contains("hvc1")
     }
 
+    var hdrLabel: String? {
+        isHDR ? "HDR" : nil
+    }
+
     var resolutionOptions: [CGSize] {
         let standards: [CGSize] = [
             CGSize(width: 3840, height: 2160),
