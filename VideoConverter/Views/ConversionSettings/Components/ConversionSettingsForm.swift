@@ -11,6 +11,9 @@ struct ConversionSettingsForm: View {
     @Binding var bitratePercent: Double
     @Binding var removeHDR: Bool
     @Binding var keepOriginalBitrate: Bool
+    @Binding var outputName: String
+    @Binding var outputPrefix: String
+    @Binding var outputSuffix: String
 
     private var inputBitrate: Int {
         guard asset.duration > 0 else { return 2_000_000 }
@@ -43,6 +46,15 @@ struct ConversionSettingsForm: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
+            }
+
+            SettingsSection(title: "Output Filename") {
+                FilenameFields(
+                    name: $outputName,
+                    prefix: $outputPrefix,
+                    suffix: $outputSuffix,
+                    originalFilename: asset.filename
+                )
             }
 
             SettingsSection(title: "Output Resolution") {
@@ -259,5 +271,63 @@ private struct BitrateFooter: View {
         }
         .font(.caption)
         .foregroundStyle(.secondary)
+    }
+}
+
+private struct FilenameFields: View {
+    @Binding var name: String
+    @Binding var prefix: String
+    @Binding var suffix: String
+    let originalFilename: String
+
+    private var previewName: String {
+        let stem = (originalFilename as NSString).deletingPathExtension
+        let ext = (originalFilename as NSString).pathExtension.isEmpty ? "mov" : (originalFilename as NSString).pathExtension
+        let actualName = name.isEmpty ? stem : name
+        return "\(prefix)\(actualName)\(suffix).\(ext)"
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            TextField("Name (leave empty to keep original)", text: $name)
+                .textFieldStyle(.roundedBorder)
+                .autocapitalization(.none)
+                .disableAutocorrection(true)
+
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Prefix")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    TextField("e.g. Converted_", text: $prefix)
+                        .textFieldStyle(.roundedBorder)
+                        .autocapitalization(.none)
+                        .disableAutocorrection(true)
+                }
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Suffix")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    TextField("e.g. _HEVC", text: $suffix)
+                        .textFieldStyle(.roundedBorder)
+                        .autocapitalization(.none)
+                        .disableAutocorrection(true)
+                }
+            }
+
+            HStack {
+                Text("Preview:")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Text(previewName)
+                    .font(.caption)
+                    .fontWeight(.medium)
+                Spacer()
+            }
+            .padding(8)
+            .background(Color(.systemGray6))
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+        }
     }
 }

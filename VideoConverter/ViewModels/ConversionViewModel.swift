@@ -23,7 +23,7 @@ final class ConversionViewModel {
     // MARK: - Public API
 
     /// Enqueues a single job from ConversionSettingsView.
-    func enqueue(asset: VideoAsset, targetResolution: CGSize, targetFrameRate: Double, targetBitrate: Int? = nil, removeHDR: Bool = false, keepOriginalBitrate: Bool = false) {
+    func enqueue(asset: VideoAsset, targetResolution: CGSize, targetFrameRate: Double, targetBitrate: Int? = nil, removeHDR: Bool = false, keepOriginalBitrate: Bool = false, outputName: String? = nil, outputPrefix: String? = nil, outputSuffix: String? = nil) {
         // Duplicate guard: skip if already queued or done
         guard !jobs.contains(where: { $0.sourceAsset.id == asset.id && !$0.status.isTerminal }) else { return }
 
@@ -33,7 +33,10 @@ final class ConversionViewModel {
             targetFrameRate: targetFrameRate,
             targetBitrate: targetBitrate,
             removeHDR: removeHDR,
-            keepOriginalBitrate: keepOriginalBitrate
+            keepOriginalBitrate: keepOriginalBitrate,
+            outputName: outputName,
+            outputPrefix: outputPrefix,
+            outputSuffix: outputSuffix
         )
         jobs.append(job)
         showingProgress = true
@@ -41,10 +44,10 @@ final class ConversionViewModel {
     }
 
     /// Enqueues multiple jobs for batch conversion (uses original resolution/fps).
-    func enqueueBatch(assets: [VideoAsset], removeHDR: Bool = false, keepOriginalBitrate: Bool = false) {
+    func enqueueBatch(assets: [VideoAsset], removeHDR: Bool = false, keepOriginalBitrate: Bool = false, outputName: String? = nil, outputPrefix: String? = nil, outputSuffix: String? = nil) {
         let newJobs = assets
             .filter { a in !jobs.contains(where: { $0.sourceAsset.id == a.id && !$0.status.isTerminal }) }
-            .map { ConversionJob(sourceAsset: $0, targetResolution: $0.resolution, targetFrameRate: $0.frameRate, removeHDR: removeHDR, keepOriginalBitrate: keepOriginalBitrate) }
+            .map { ConversionJob(sourceAsset: $0, targetResolution: $0.resolution, targetFrameRate: $0.frameRate, removeHDR: removeHDR, keepOriginalBitrate: keepOriginalBitrate, outputName: outputName, outputPrefix: outputPrefix, outputSuffix: outputSuffix) }
         guard !newJobs.isEmpty else { return }
         jobs.append(contentsOf: newJobs)
         showingProgress = true
@@ -117,7 +120,7 @@ final class ConversionViewModel {
             let outSize = attrs?[.size] as? Int64
 
             // Save to library
-            let identifier = try await service.saveToPhotoLibrary(url: outputURL, originalAsset: job.sourceAsset)
+            let identifier = try await service.saveToPhotoLibrary(url: outputURL, originalAsset: job.sourceAsset, customFilename: job.outputFilename)
             job.outputAssetIdentifier = identifier
             job.outputFileSize = outSize
 

@@ -14,6 +14,9 @@ struct ConversionSettingsView: View {
     @State private var bitratePercent: Double
     @State private var removeHDR: Bool = false
     @State private var keepOriginalBitrate: Bool = false
+    @State private var outputName: String = ""
+    @State private var outputPrefix: String = ""
+    @State private var outputSuffix: String = ""
 
     private var inputBitrate: Int {
         guard asset.duration > 0 else { return 2_000_000 }
@@ -58,7 +61,10 @@ struct ConversionSettingsView: View {
                             selectedFPS: $selectedFPS,
                             bitratePercent: $bitratePercent,
                             removeHDR: $removeHDR,
-                            keepOriginalBitrate: $keepOriginalBitrate
+                            keepOriginalBitrate: $keepOriginalBitrate,
+                            outputName: $outputName,
+                            outputPrefix: $outputPrefix,
+                            outputSuffix: $outputSuffix
                         )
                     }
                     .padding(16)
@@ -90,7 +96,10 @@ struct ConversionSettingsView: View {
                             targetFrameRate: selectedFPS,
                             targetBitrate: targetBitrate,
                             removeHDR: removeHDR,
-                            keepOriginalBitrate: keepOriginalBitrate
+                            keepOriginalBitrate: keepOriginalBitrate,
+                            outputName: outputName.isEmpty ? nil : outputName,
+                            outputPrefix: outputPrefix.isEmpty ? nil : outputPrefix,
+                            outputSuffix: outputSuffix.isEmpty ? nil : outputSuffix
                         )
                         dismiss()
                     }

@@ -39,6 +39,9 @@ final class ConversionJob: Identifiable {
     let targetBitrate: Int?
     let removeHDR: Bool
     let keepOriginalBitrate: Bool
+    let outputName: String?
+    let outputPrefix: String?
+    let outputSuffix: String?
 
     var status: ConversionStatus = .pending
     var progress: Double = 0.0
@@ -54,7 +57,10 @@ final class ConversionJob: Identifiable {
         targetFrameRate: Double,
         targetBitrate: Int? = nil,
         removeHDR: Bool = false,
-        keepOriginalBitrate: Bool = false
+        keepOriginalBitrate: Bool = false,
+        outputName: String? = nil,
+        outputPrefix: String? = nil,
+        outputSuffix: String? = nil
     ) {
         self.sourceAsset = sourceAsset
         self.targetResolution = targetResolution
@@ -62,6 +68,18 @@ final class ConversionJob: Identifiable {
         self.targetBitrate = targetBitrate
         self.removeHDR = removeHDR
         self.keepOriginalBitrate = keepOriginalBitrate
+        self.outputName = outputName
+        self.outputPrefix = outputPrefix
+        self.outputSuffix = outputSuffix
+    }
+
+    var outputFilename: String {
+        let stem = (sourceAsset.filename as NSString).deletingPathExtension
+        let ext = (sourceAsset.filename as NSString).pathExtension.isEmpty ? "mov" : (sourceAsset.filename as NSString).pathExtension
+        let name = outputName ?? stem
+        let prefix = outputPrefix ?? ""
+        let suffix = outputSuffix ?? ""
+        return "\(prefix)\(name)\(suffix).\(ext)"
     }
 
     // Estimated savings once done (only valid when outputFileSize is known)

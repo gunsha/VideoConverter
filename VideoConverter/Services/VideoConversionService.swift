@@ -35,7 +35,8 @@ final class VideoConversionService {
         )
         try VideoConversionUtils.checkStorageSpace(estimatedBytes: max(estimated * 2, 50_000_000))
 
-        let tempFileName = "HEVC_\(ProcessInfo.processInfo.processIdentifier)_\(Date().timeIntervalSince1970)_\(UUID().uuidString).mov"
+        let customFilename = job.outputFilename
+        let tempFileName = customFilename
         let tempURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(tempFileName)
 
@@ -63,7 +64,7 @@ final class VideoConversionService {
     // MARK: - Save to library
 
     @discardableResult
-    func saveToPhotoLibrary(url: URL, originalAsset: VideoAsset) async throws -> String {
+    func saveToPhotoLibrary(url: URL, originalAsset: VideoAsset, customFilename: String? = nil) async throws -> String {
         ConversionLogger.debug("Attempting to save file at: \(url.path)")
         
         guard FileManager.default.fileExists(atPath: url.path) else {
@@ -85,9 +86,12 @@ final class VideoConversionService {
         try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
             PHPhotoLibrary.shared().performChanges({
                 let opts = PHAssetResourceCreationOptions()
-                let stem = (originalAsset.filename as NSString).deletingPathExtension
-                let ext  = (originalAsset.filename as NSString).pathExtension
-                opts.originalFilename = "\(stem).\(ext.isEmpty ? "mov" : ext)"
+                let filename = customFilename ?? {
+                    let stem = (originalAsset.filename as NSString).deletingPathExtension
+                    let ext = (originalAsset.filename as NSString).pathExtension
+                    return "\(stem).\(ext.isEmpty ? "mov" : ext)"
+                }()
+                opts.originalFilename = filename
 
                 let request = PHAssetCreationRequest.forAsset()
                 request.addResource(with: .video, fileURL: url, options: opts)
