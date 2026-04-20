@@ -58,14 +58,23 @@ struct ConversionSettingsForm: View {
             }
 
             SettingsSection(title: "Output Resolution") {
-                ForEach(asset.resolutionOptions.indices, id: \.self) { idx in
-                    let res = asset.resolutionOptions[idx]
+                let options: [CGSize] = {
+                    var opts = asset.resolutionOptions
+                    if !opts.contains(asset.resolution) {
+                        opts.append(asset.resolution)
+                        opts.sort(by: { $0.height > $1.height })
+                    }
+                    return opts
+                }()
+                ForEach(options.indices, id: \.self) { idx in
+                    let res = options[idx]
                     ResolutionRow(
                         resolution: res,
+                        originalResolution: asset.resolution,
                         isSelected: selectedResolution == res,
                         onTap: { withAnimation { selectedResolution = res } }
                     )
-                    if idx < asset.resolutionOptions.count - 1 {
+                    if idx < options.count - 1 {
                         Divider()
                     }
                 }
@@ -144,6 +153,7 @@ struct SettingsSection<Content: View>: View {
 
 private struct ResolutionRow: View {
     let resolution: CGSize
+    let originalResolution: CGSize
     let isSelected: Bool
     let onTap: () -> Void
 
@@ -169,13 +179,19 @@ private struct ResolutionRow: View {
     }
 
     private func resolutionName(_ size: CGSize) -> String {
+        let name: String
         switch Int(size.height) {
-        case 2160: return "4K Ultra HD"
-        case 1080: return "Full HD"
-        case 720:  return "HD"
-        case 540:  return "qHD"
-        default:   return "\(Int(size.height))p"
+        case 2160: name = "4K Ultra HD"
+        case 1080: name = "Full HD"
+        case 720:  name = "HD"
+        case 540:  name = "qHD"
+        default:   name = "\(Int(size.height))p"
         }
+        
+        if size == originalResolution {
+            return "\(name) (Original)"
+        }
+        return name
     }
 }
 

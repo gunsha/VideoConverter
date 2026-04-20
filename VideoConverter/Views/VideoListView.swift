@@ -18,7 +18,7 @@ struct VideoListView: View {
         @Bindable var conversionVM = conversionVM
         NavigationStack {
             listContent
-                .navigationTitle("Videos to Convert")
+                .navigationTitle("Video Library")
                 .toolbar { toolbarItems }
         }
         // Settings sheet (single video)
