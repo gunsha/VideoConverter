@@ -353,20 +353,6 @@ final class VideoConversionService {
             writer.add(videoInput)
         }
 
-        var videoComposition: AVMutableVideoComposition?
-        if removeHDR {
-            compressionProps[kVTCompressionPropertyKey_PreserveDynamicHDRMetadata as String] = false
-
-            videoComposition = AVMutableVideoComposition(asset: asset) { request in
-                request.finish(with: request.sourceImage, context: nil)
-            }
-            videoComposition?.renderSize = CGSize(width: outputWidth, height: outputHeight)
-            videoComposition?.frameDuration = CMTime(value: 1, timescale: CMTimeScale(targetFPS))
-            videoComposition?.colorPrimaries = AVVideoColorPrimaries_ITU_R_709_2
-            videoComposition?.colorTransferFunction = AVVideoTransferFunction_ITU_R_709_2
-            videoComposition?.colorYCbCrMatrix = AVVideoYCbCrMatrix_ITU_R_709_2
-        }
-
         var audioInput: AVAssetWriterInput?
         if audioOutput != nil {
             let audioSettings: [String: Any] = [
@@ -421,7 +407,7 @@ final class VideoConversionService {
         var audioCompleted = audioInput == nil
 
         videoGroup.enter()
-        videoInput.requestMediaDataWhenReady(on: videoQueue) {
+        videoInput.requestMediaDataWhenReady(on: videoQueue) { [videoInput] in
             while videoInput.isReadyForMoreMediaData {
                 autoreleasepool {
                     if let sourceSampleBuffer = videoOutput.copyNextSampleBuffer() {
@@ -528,7 +514,7 @@ final class VideoConversionService {
 
         if let audioOutput = audioOutput, let audioInput = audioInput {
             audioGroup.enter()
-            audioInput.requestMediaDataWhenReady(on: audioQueue) {
+            audioInput.requestMediaDataWhenReady(on: audioQueue) { [audioInput, audioOutput] in
                 while audioInput.isReadyForMoreMediaData {
                     if let sampleBuffer = audioOutput.copyNextSampleBuffer() {
                         audioInput.append(sampleBuffer)
@@ -608,3 +594,4 @@ final class VideoConversionService {
         }
     }
 }
+
