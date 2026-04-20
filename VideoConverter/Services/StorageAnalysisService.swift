@@ -89,7 +89,6 @@ final class StorageAnalysisService {
             return PHAsset.fetchAssets(with: .video, options: o)
         }.value
 
-        let total = images.count + videos.count
         var processed = 0
 
         for i in 0..<images.count {

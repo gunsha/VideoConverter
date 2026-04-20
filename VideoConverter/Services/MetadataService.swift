@@ -177,8 +177,8 @@ struct MetadataService {
             // Try to infer from the original dataType
             if let originalDataType = original.dataType {
                 dataType = originalDataType
-                if let anyValue = original.value {
-                    value = anyValue as? (any NSCopying & NSObjectProtocol)
+                if let anyValue = try? await original.load(.value) {
+                    value = anyValue
                 }
             } else {
                 return nil
@@ -217,3 +217,4 @@ struct MetadataService {
         return trackMetadata
     }
 }
+

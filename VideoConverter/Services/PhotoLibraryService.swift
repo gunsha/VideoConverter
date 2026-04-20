@@ -114,7 +114,8 @@ final class PhotoLibraryService: NSObject, PHPhotoLibraryChangeObserver {
         let codec = codecName(from: formatDescriptions.first)
         let frameRate = (try? await videoTrack.load(.nominalFrameRate)).map(Double.init) ?? 30.0
         let naturalSize = (try? await videoTrack.load(.naturalSize)) ?? CGSize(width: phAsset.pixelWidth, height: phAsset.pixelHeight)
-        let isHDR = videoTrack.hasMediaCharacteristic(.containsHDRVideo)
+        let mediaCharacteristics = (try? await videoTrack.load(.mediaCharacteristics)) ?? []
+        let isHDR = mediaCharacteristics.contains(.containsHDRVideo)
 
         let fileSize = await getVideoFileSize(for: phAsset)
         let filename = getFilename(for: phAsset)
@@ -122,7 +123,7 @@ final class PhotoLibraryService: NSObject, PHPhotoLibraryChangeObserver {
         // Extract lens and camera metadata
         let metadata = await extractLensMetadataFromAVAsset(avAsset)
 
-        return VideoAsset(
+        return await VideoAsset(
             id: phAsset.localIdentifier,
             phAsset: phAsset,
             filename: filename,
