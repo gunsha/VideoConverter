@@ -63,6 +63,15 @@ struct VideoPreviewView: View {
             player?.pause()
             player = nil
         }
+        .gesture(
+            DragGesture()
+                .onEnded { value in
+                    if value.translation.height > 50 && abs(value.translation.width) < 50 {
+                        player?.pause()
+                        onDismiss()
+                    }
+                }
+        )
     }
 
     private var volumeControl: some View {
