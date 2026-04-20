@@ -38,6 +38,7 @@ struct ConversionSettingsForm: View {
             if asset.isHDR {
                 SettingsSection(title: "HDR") {
                     Toggle("Remove HDR", isOn: $removeHDR)
+                    Divider()
                     Text("Removes HDR metadata and tone-maps to SDR Rec.709 for better compatibility.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -52,22 +53,31 @@ struct ConversionSettingsForm: View {
                         isSelected: selectedResolution == res,
                         onTap: { withAnimation { selectedResolution = res } }
                     )
+                    if idx < asset.resolutionOptions.count - 1 {
+                        Divider()
+                    }
                 }
             }
 
             SettingsSection(title: "Frame Rate") {
-                ForEach(asset.frameRateOptions.filter { $0 <= asset.frameRate }, id: \.self) { fps in
+                let fpsOptions = asset.frameRateOptions.filter { $0 <= asset.frameRate }
+                ForEach(fpsOptions.indices, id: \.self) { idx in
+                    let fps = fpsOptions[idx]
                     FrameRateRow(
                         fps: fps,
                         originalFPS: asset.frameRate,
                         isSelected: abs(selectedFPS - fps) < 0.5,
                         onTap: { withAnimation { selectedFPS = fps } }
                     )
+                    if idx < fpsOptions.count - 1 {
+                        Divider()
+                    }
                 }
             }
 
             SettingsSection(title: "Target Bitrate") {
                 Toggle("Keep original bitrate", isOn: $keepOriginalBitrate)
+                Divider()
 
                 if !keepOriginalBitrate {
                     BitrateSlider(
@@ -75,6 +85,7 @@ struct ConversionSettingsForm: View {
                         targetBitrate: targetBitrate,
                         inputBitrate: inputBitrate
                     )
+                    Divider()
                 }
 
                 BitrateFooter(
@@ -110,8 +121,12 @@ struct SettingsSection<Content: View>: View {
             content()
         }
         .padding(16)
-        .background(Color(.systemBackground))
+        .background(Color(.secondarySystemBackground))
         .clipShape(RoundedRectangle(cornerRadius: 10))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(Color(.separator), lineWidth: 1)
+        )
     }
 }
 
