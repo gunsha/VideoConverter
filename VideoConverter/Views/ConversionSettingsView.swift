@@ -20,29 +20,6 @@ struct ConversionSettingsView: View {
         return max(Int(Double(asset.fileSize * 8) / asset.duration), 500_000)
     }
 
-    private var defaultTargetBitrate: Int {
-        let height = asset.resolution.height
-        if height >= 1080 {
-            return 4_096_000
-        } else if height >= 720 {
-            return 2_048_000
-        } else {
-            return Int(Double(inputBitrate) * 0.65)
-        }
-    }
-
-    private var defaultBitratePercent: Double {
-        guard inputBitrate > 0 else { return 65 }
-        let height = asset.resolution.height
-        if height >= 1080 {
-            return min(65, Double(4_096_000) / Double(inputBitrate) * 100)
-        } else if height >= 720 {
-            return min(65, Double(2_048_000) / Double(inputBitrate) * 100)
-        } else {
-            return 65
-        }
-    }
-
     private var targetBitrate: Int {
         if keepOriginalBitrate {
             return inputBitrate
@@ -51,15 +28,12 @@ struct ConversionSettingsView: View {
     }
     
     private var recommendedBitrateText: String {
-        if selectedResolution.height >= 2160 {
-            return "8 Mbps"
-        } else if selectedResolution.height >= 1080 {
-            return "4 Mbps"
-        } else if selectedResolution.height >= 720 {
-            return "2 Mbps"
-        } else {
-            return "lower"
-        }
+        let recommended = VideoConversionUtils.recommendedHEVCBitrate(
+            width: Int(selectedResolution.width),
+            height: Int(selectedResolution.height),
+            fps: selectedFPS
+        )
+        return formatBitrate(recommended)
     }
 
     private var estimatedBytes: Int64 {
@@ -67,11 +41,15 @@ struct ConversionSettingsView: View {
             return asset.fileSize
         }
         
-        // Calculate estimated size based on actual target bitrate and duration
         let adjustedFPS = min(selectedFPS, asset.frameRate)
         let duration = asset.duration * (adjustedFPS / asset.frameRate)
         
-        return MetadataService.estimateSize(bitrate: targetBitrate, durationSeconds: duration)
+        return VideoConversionUtils.estimatedHEVCFileSize(
+            durationSeconds: duration,
+            videoBitrate: targetBitrate,
+            fps: adjustedFPS,
+            resolution: (width: Int(selectedResolution.width), height: Int(selectedResolution.height))
+        )
     }
 
     private var savings: Int {
@@ -86,17 +64,13 @@ struct ConversionSettingsView: View {
         _selectedResolution = State(initialValue: asset.resolution)
         _selectedFPS        = State(initialValue: asset.frameRate)
 
-        let height = asset.resolution.height
+        let recommendedBitrate = VideoConversionUtils.recommendedHEVCBitrate(
+            width: Int(asset.resolution.width),
+            height: Int(asset.resolution.height),
+            fps: asset.frameRate
+        )
         let sourceBitrate = max(Int(Double(asset.fileSize * 8) / max(asset.duration, 1)), 500_000)
-        let targetBitrate: Int
-        if height >= 1080 {
-            targetBitrate = 4_096_000
-        } else if height >= 720 {
-            targetBitrate = 2_048_000
-        } else {
-            targetBitrate = Int(Double(sourceBitrate) * 0.65)
-        }
-        let calculatedPercent = Double(targetBitrate) / Double(sourceBitrate) * 100
+        let calculatedPercent = Double(recommendedBitrate) / Double(sourceBitrate) * 100
         _bitratePercent = State(initialValue: min(calculatedPercent, 100))
     }
 

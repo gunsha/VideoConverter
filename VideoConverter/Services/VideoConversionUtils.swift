@@ -91,6 +91,61 @@ enum VideoConversionUtils {
         }
     }
 
+    /// Calculates the estimated size of an HEVC transcoded video file.
+    ///
+    /// - Parameters:
+    ///   - durationSeconds: Duration of the video in seconds
+    ///   - videoBitrate: Video bitrate in bits per second (bps)
+    ///   - audioBitrate: Audio bitrate in bits per second (bps), default 128 kbps
+    ///   - fps: Frames per second (used for frame count validation, not directly in size calc)
+    ///   - resolution: Video resolution as (width, height)
+    /// - Returns: Estimated file size in bytes
+    static func estimatedHEVCFileSize(
+        durationSeconds: Double,
+        videoBitrate: Int,       // e.g. 5_000_000 for 5 Mbps
+        audioBitrate: Int = 128_000,
+        fps: Double,
+        resolution: (width: Int, height: Int)
+    ) -> Int64 {
+        // HEVC efficiency factor vs H.264 (~40-50% smaller for same quality)
+        // Already accounted for if you pass an HEVC-appropriate bitrate,
+        // but useful if deriving bitrate from resolution/fps heuristics.
+
+        let totalBitrate = Double(videoBitrate + audioBitrate) // bits per second
+        let sizeInBits = totalBitrate * durationSeconds
+        let sizeInBytes = sizeInBits / 8.0
+
+        // Add ~2% container overhead (MP4/MOV)
+        let containerOverhead = sizeInBytes * 0.02
+        return Int64(sizeInBytes + containerOverhead)
+    }
+
+
+    /// Estimates a reasonable HEVC video bitrate based on resolution and fps.
+    /// Based on Apple's HLS authoring recommendations and common HEVC heuristics.
+    static func recommendedHEVCBitrate(width: Int, height: Int, fps: Double) -> Int {
+        let pixels = width * height
+        let fpsMultiplier = fps > 30 ? 1.2 : 1.0  // bump for 60fps
+
+        let baseBitrate: Double
+        switch pixels {
+        case ..<(640 * 360):       // below 360p
+            baseBitrate = 400_000
+        case ..<(1280 * 720):      // 360p – 720p
+            baseBitrate = 1_000_000
+        case ..<(1920 * 1080):     // 720p – 1080p
+            baseBitrate = 2_048_000
+        case ..<(2560 * 1440):     // 1080p – 1440p
+            baseBitrate = 4_096_000
+        case ..<(3840 * 2160):     // 1440p – 4K
+            baseBitrate = 8_000_000
+        default:                   // 4K and above
+            baseBitrate = 12_000_000
+        }
+
+        return Int(baseBitrate * fpsMultiplier)
+    }
+
     static func calculateBitrate(fileSize: Int64, duration: Double) -> Int {
         guard duration > 0 else { return 2_000_000 }
         let bitsPerSecond = Double(fileSize * 8) / duration
