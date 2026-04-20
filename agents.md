@@ -25,9 +25,15 @@ VideoConverter/
 │   ├── VideoRowView.swift        # Individual video row
 │   ├── VideoPreviewView.swift     # Video preview player
 │   ├── ThumbnailView.swift        # Video thumbnail
-│   ├── ConversionSettingsView.swift  # HEVC conversion settings
-│   ├── ConversionProgressView.swift # Conversion progress display
-│   └── ConversionResultView.swift # Conversion result/savings display
+│   ├── ConversionSettings/ConversionSettingsView.swift  # HEVC conversion settings
+│   ├── ConversionSettings/Components/
+│   │   ├── ConversionSettingsForm.swift
+│   │   ├── EstimatedSizeFooter.swift
+│   │   ├── VideoRowHeader.swift
+│   │   └── VideoDetailsList.swift
+│   ├── ConversionProgress/ConversionProgressView.swift # Conversion progress display
+│   ├── ConversionProgress/Components/JobRowView.swift
+│   ├── ConversionResultView.swift # Conversion result/savings display
 │   └── StorageAnalysisView.swift # Storage analysis dashboard
 ├── ViewModels/
 │   ├── VideoListViewModel.swift  # Video list logic
@@ -52,8 +58,13 @@ VideoConverter/
 | **VideoRowView** | Displays video thumbnail, duration, size, and selection checkbox |
 | **VideoPreviewView** | AVPlayer-based video preview with playback controls |
 | **ThumbnailView** | Async-loaded video thumbnail with loading state |
-| **ConversionSettingsView** | Settings panel for HEVC quality ( efficiency / quality ) |
+| **ConversionSettingsView** | Settings panel for HEVC quality (efficiency/quality) |
+| **ConversionSettingsForm** | Form for configuring conversion settings |
+| **EstimatedSizeFooter** | Estimated output file size display |
+| **VideoRowHeader** | Header showing video info in settings |
+| **VideoDetailsList** | Detailed video metadata list |
 | **ConversionProgressView** | Progress indicator during conversion |
+| **JobRowView** | Job progress row display |
 | **ConversionResultView** | Shows space savings and conversion status |
 | **StorageAnalysisView** | Dashboard showing potential storage savings |
 
