@@ -19,7 +19,13 @@ struct EstimatedSizeFooter: View {
         if keepOriginalBitrate {
             return inputBitrate
         }
-        return Int(Double(inputBitrate) * (bitratePercent / 100.0))
+
+        let sourcePixels = asset.resolution.width * asset.resolution.height
+        let targetPixels = selectedResolution.width * selectedResolution.height
+        let resolutionRatio = Double(targetPixels) / Double(sourcePixels)
+
+        let baseBitrate = Int(Double(inputBitrate) * resolutionRatio)
+        return Int(Double(baseBitrate) * (bitratePercent / 100.0))
     }
 
     private var estimatedBytes: Int64 {
