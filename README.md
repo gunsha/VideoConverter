@@ -1,14 +1,19 @@
+### [DISCLAIMER]: THIS APP WAS MOSTLY CREATED USING DIFFERENT FREE AI TOOLS WITH SUPERVISION AND CORRECTIONS FROM ME, BEEN A DEV FOR A LONG TIME BUT HAVE NO EXPERIENCE WITH IOS DEVELOPMENT.
+
+### If you find it useful, consider supporting me to get it to the app store for everyone to use for free!
+
 [![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/Z8Z31Y5S5M)
 
-# VideoConverter
+# Video Converter
 
-VideoConverter is an iOS app that helps you save significant iCloud storage space by transcoding videos from your photo library into the efficient HEVC format. 
+Video Converter is an iOS app that helps you save significant iCloud storage space by transcoding videos from your photo library into the efficient HEVC format. 
 
 **Key Features:**
-*   **HEVC Transcoding:** Converts existing library videos into the highly efficient HEVC (H.265) codec.
-*   **Safe Conversion:** Creates a new, space-saving copy of the video without deleting or overwriting the original file.
+*   **HEVC Transcoding:** Converts existing library videos into the HEVC (H.265) codec.
+*   **Safe Conversion:** Creates a copy of the original video without deleting or overwriting the original file.
 *   **HDR Removal:** Provides the option to remove HDR from the source file.
 *   **Customizable Output:** Allows you to change the resolution, framerate, and bitrate of the source video to maximize compression and space savings.
+*   **Storage Analysis:** Shows storage used by photos and videos (HEVC and non-HEVC) in your library.
 
 # HDR content notes:
 
