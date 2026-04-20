@@ -34,14 +34,13 @@ final class PhotoLibraryService: NSObject, PHPhotoLibraryChangeObserver {
     func fetchAllVideos(progressHandler: (@Sendable (Int) -> Void)? = nil) async -> [VideoAsset] {
         let phAssets = await Task.detached {
             let fetchOptions = PHFetchOptions()
-            fetchOptions.predicate = NSPredicate(format: "mediaType == %d", PHAssetMediaType.video.rawValue)
+            fetchOptions.predicate = NSPredicate(format: "mediaType == %d AND (mediaSubtypes & %d) == 0", PHAssetMediaType.video.rawValue, PHAssetMediaSubtype.photoLive.rawValue)
             fetchOptions.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
             fetchOptions.includeHiddenAssets = false
 
             let result = PHAsset.fetchAssets(with: .video, options: fetchOptions)
             var assets: [PHAsset] = []
             result.enumerateObjects { asset, _, _ in
-                guard !asset.mediaSubtypes.contains(.photoLive) else { return }
                 assets.append(asset)
             }
             return assets
@@ -49,6 +48,8 @@ final class PhotoLibraryService: NSObject, PHPhotoLibraryChangeObserver {
 
         return await withTaskGroup(of: VideoAsset?.self) { group -> [VideoAsset] in
             var count = 0
+            var lastReportedCount = 0
+            let batchSize = max(10, phAssets.count / 20)
             for phAsset in phAssets {
                 group.addTask {
                     await self.buildVideoAsset(from: phAsset)
@@ -58,11 +59,19 @@ final class PhotoLibraryService: NSObject, PHPhotoLibraryChangeObserver {
             for await result in group {
                 if let asset = result {
                     count += 1
-                    let currentCount = count
-                    Task { @MainActor in
-                        progressHandler?(currentCount)
+                    if count - lastReportedCount >= batchSize {
+                        let currentCount = count
+                        Task { @MainActor in
+                            progressHandler?(currentCount)
+                        }
+                        lastReportedCount = currentCount
                     }
                     assets.append(asset)
+                }
+            }
+            if count > lastReportedCount {
+                Task { @MainActor in
+                    progressHandler?(count)
                 }
             }
             return assets.sorted { ($0.creationDate ?? .distantPast) > ($1.creationDate ?? .distantPast) }
