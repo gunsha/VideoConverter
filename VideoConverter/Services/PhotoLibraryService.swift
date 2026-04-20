@@ -34,48 +34,62 @@ final class PhotoLibraryService: NSObject, PHPhotoLibraryChangeObserver {
     func fetchAllVideos(progressHandler: (@Sendable (Int) -> Void)? = nil) async -> [VideoAsset] {
         let phAssets = await Task.detached {
             let fetchOptions = PHFetchOptions()
-            fetchOptions.predicate = NSPredicate(format: "mediaType == %d AND (mediaSubtypes & %d) == 0", PHAssetMediaType.video.rawValue, PHAssetMediaSubtype.photoLive.rawValue)
+            fetchOptions.predicate = NSPredicate(format: "mediaType == %d", PHAssetMediaType.video.rawValue)
             fetchOptions.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
             fetchOptions.includeHiddenAssets = false
 
             let result = PHAsset.fetchAssets(with: .video, options: fetchOptions)
             var assets: [PHAsset] = []
             result.enumerateObjects { asset, _, _ in
+                guard !asset.mediaSubtypes.contains(.photoLive) else { return }
                 assets.append(asset)
             }
             return assets
         }.value
 
-        return await withTaskGroup(of: VideoAsset?.self) { group -> [VideoAsset] in
-            var count = 0
-            var lastReportedCount = 0
-            let batchSize = max(10, phAssets.count / 20)
-            for phAsset in phAssets {
-                group.addTask {
-                    await self.buildVideoAsset(from: phAsset)
-                }
-            }
-            var assets: [VideoAsset] = []
-            for await result in group {
-                if let asset = result {
-                    count += 1
-                    if count - lastReportedCount >= batchSize {
-                        let currentCount = count
-                        Task { @MainActor in
-                            progressHandler?(currentCount)
-                        }
-                        lastReportedCount = currentCount
+        let maxConcurrent = 15
+        let totalCount = phAssets.count
+        var results: [VideoAsset] = []
+        var lastReportedCount = 0
+        let progressBatch = max(10, totalCount / 20)
+
+        for batchStart in stride(from: 0, to: totalCount, by: maxConcurrent) {
+            let batchEnd = min(batchStart + maxConcurrent, totalCount)
+            let batch = Array(phAssets[batchStart..<batchEnd])
+
+            let batchResults = await withTaskGroup(of: VideoAsset?.self) { group -> [VideoAsset] in
+                for phAsset in batch {
+                    group.addTask {
+                        await self.buildVideoAsset(from: phAsset)
                     }
-                    assets.append(asset)
                 }
+                var assets: [VideoAsset] = []
+                for await result in group {
+                    if let asset = result {
+                        assets.append(asset)
+                    }
+                }
+                return assets
             }
-            if count > lastReportedCount {
+
+            results.append(contentsOf: batchResults)
+
+            let currentCount = results.count
+            if currentCount - lastReportedCount >= progressBatch {
+                lastReportedCount = currentCount
                 Task { @MainActor in
-                    progressHandler?(count)
+                    progressHandler?(currentCount)
                 }
             }
-            return assets.sorted { ($0.creationDate ?? .distantPast) > ($1.creationDate ?? .distantPast) }
         }
+
+        if results.count > lastReportedCount {
+            Task { @MainActor in
+                progressHandler?(results.count)
+            }
+        }
+
+        return results.sorted { ($0.creationDate ?? .distantPast) > ($1.creationDate ?? .distantPast) }
     }
 
     // MARK: - Fetch single asset by ID
@@ -239,8 +253,8 @@ final class PhotoLibraryService: NSObject, PHPhotoLibraryChangeObserver {
     private nonisolated func loadAVURLAsset(for phAsset: PHAsset) async -> AVURLAsset? {
         await withCheckedContinuation { continuation in
             let options = PHVideoRequestOptions()
-            options.isNetworkAccessAllowed = true
-            options.deliveryMode = .highQualityFormat
+            options.isNetworkAccessAllowed = false
+            options.deliveryMode = .fastFormat
             PHImageManager.default().requestAVAsset(forVideo: phAsset, options: options) { avAsset, _, _ in
                 continuation.resume(returning: avAsset as? AVURLAsset)
             }
@@ -250,8 +264,8 @@ final class PhotoLibraryService: NSObject, PHPhotoLibraryChangeObserver {
     private nonisolated func loadAVAssetForMetadata(for phAsset: PHAsset) async -> AVAsset? {
         await withCheckedContinuation { continuation in
             let options = PHVideoRequestOptions()
-            options.isNetworkAccessAllowed = true
-            options.deliveryMode = .highQualityFormat
+            options.isNetworkAccessAllowed = false
+            options.deliveryMode = .fastFormat
             PHImageManager.default().requestAVAsset(forVideo: phAsset, options: options) { avAsset, _, _ in
                 continuation.resume(returning: avAsset)
             }
