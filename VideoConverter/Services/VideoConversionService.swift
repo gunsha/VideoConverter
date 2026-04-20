@@ -204,7 +204,6 @@ final class VideoConversionService {
         let preferredTransform = try await sourceVideoTrack.load(.preferredTransform)
         let sourceFrameRate = Double(try await sourceVideoTrack.load(.nominalFrameRate))
 
-        // FIX: Single declaration of fpsIsOriginal and frameSkipInterval.
         // fpsIsOriginal is true when the difference is negligible (< 0.5 fps).
         let fpsIsOriginal = abs(targetFPS - sourceFrameRate) < 0.5
 
@@ -246,10 +245,15 @@ final class VideoConversionService {
 
         let reader = try AVAssetReader(asset: asset)
 
+        // FIX: When preserving HDR, use a 10-bit pixel format so the decoder
+        // does NOT tone-map or strip HDR/Dolby Vision metadata on read.
+        // kCVPixelFormatType_32BGRA is 8-bit SDR — using it unconditionally
+        // was destroying HDR data even when removeHDR = false.
         let videoReaderSettings: [String: Any]
         let pixelBufferAttributes: [String: Any]
 
         if removeHDR {
+            // SDR path: 8-bit 4:2:0, tone-mapping happens implicitly on decode.
             videoReaderSettings = [
                 kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
                 kCVPixelBufferMetalCompatibilityKey as String: true
@@ -260,11 +264,14 @@ final class VideoConversionService {
                 kCVPixelBufferHeightKey as String: outputHeight
             ]
         } else {
+            // HDR-preserving path: 10-bit 4:2:0 keeps HLG, PQ/HDR10, and the
+            // Dolby Vision base layer intact through the transcode pipeline.
             videoReaderSettings = [
-                kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA
+                kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange,
+                kCVPixelBufferMetalCompatibilityKey as String: true
             ]
             pixelBufferAttributes = [
-                kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
+                kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange,
                 kCVPixelBufferWidthKey as String: outputWidth,
                 kCVPixelBufferHeightKey as String: outputHeight
             ]
@@ -314,8 +321,13 @@ final class VideoConversionService {
         if !fpsIsOriginal {
             compressionProps[AVVideoExpectedSourceFrameRateKey] = targetFPS
         }
+        // FIX: Use Main10 profile when preserving HDR so the encoder accepts
+        // 10-bit pixel buffers. Main profile (8-bit) would reject them and
+        // silently fall back to SDR or fail at runtime.
         #if !targetEnvironment(simulator)
-        compressionProps[AVVideoProfileLevelKey] = kVTProfileLevel_HEVC_Main_AutoLevel
+        compressionProps[AVVideoProfileLevelKey] = removeHDR
+            ? kVTProfileLevel_HEVC_Main_AutoLevel
+            : kVTProfileLevel_HEVC_Main10_AutoLevel
         #endif
 
         let videoSettings: [String: Any] = [
@@ -379,7 +391,6 @@ final class VideoConversionService {
             ? Int(duration * sourceFrameRate)
             : Int(duration * targetFPS)
 
-        // FIX: Use an accumulator for even frame distribution instead of modulo.
         // framesRead counts every source frame decoded.
         // framesWritten counts every frame actually appended to the output.
         // frameAccumulator tracks the fractional position so drops are spread evenly
@@ -416,15 +427,7 @@ final class VideoConversionService {
                     if let sourceSampleBuffer = videoOutput.copyNextSampleBuffer() {
                         framesRead += 1
 
-                        // FIX: Accumulator-based frame skipping for even cadence.
-                        // On each source frame, add 1.0 to the accumulator.
-                        // Only write when the accumulator reaches the skip interval,
-                        // then subtract the interval (keeping the fractional remainder).
-                        // Example at 60->30fps (interval=2.0):
-                        //   frame 1: acc=1.0 < 2.0 → skip
-                        //   frame 2: acc=2.0 >= 2.0 → write, acc becomes 0.0
-                        //   frame 3: acc=1.0 < 2.0 → skip
-                        //   frame 4: acc=2.0 >= 2.0 → write, acc becomes 0.0
+                        // Accumulator-based frame skipping for even cadence.
                         if frameSkipInterval > 1.0 {
                             frameAccumulator += 1.0
                             if frameAccumulator < frameSkipInterval {
@@ -433,18 +436,11 @@ final class VideoConversionService {
                             frameAccumulator -= frameSkipInterval
                         }
 
-                        // FIX: Always assign new sequential timestamps based on targetFPS
-                        // when doing FPS conversion. Using original timestamps was the
-                        // root cause of the slowdown: frames were spaced at the source
-                        // cadence (1/60s apart) but only half were written, so the player
-                        // saw 30fps content spanning the full original duration → 2x slowdown.
+                        // Assign new sequential timestamps when doing FPS conversion.
                         let presentationTime: CMTime
                         if fpsIsOriginal {
-                            // No FPS change — preserve the original timestamps exactly.
                             presentationTime = CMSampleBufferGetPresentationTimeStamp(sourceSampleBuffer)
                         } else {
-                            // FPS conversion — assign sequential timestamps at targetFPS.
-                            // This ensures the output plays at the correct speed.
                             presentationTime = CMTime(value: framesWritten, timescale: Int32(targetFPS))
                         }
 
@@ -456,33 +452,61 @@ final class VideoConversionService {
                         )
 
                         if let pixelBuffer = CMSampleBufferGetImageBuffer(sourceSampleBuffer) {
-                            let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
-                            let context = CIContext()
+                            if removeHDR {
+                                // SDR path: render through CIContext into a fresh 8-bit BGRA buffer.
+                                // This intentionally tone-maps and strips HDR metadata.
+                                let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
+                                let context = CIContext()
 
-                            var renderedBuffer: CVPixelBuffer?
-                            let status = CVPixelBufferCreate(
-                                kCFAllocatorDefault,
-                                outputWidth,
-                                outputHeight,
-                                kCVPixelFormatType_32BGRA,
-                                pixelBufferAttributes as CFDictionary,
-                                &renderedBuffer
-                            )
+                                var renderedBuffer: CVPixelBuffer?
+                                let status = CVPixelBufferCreate(
+                                    kCFAllocatorDefault,
+                                    outputWidth,
+                                    outputHeight,
+                                    kCVPixelFormatType_32BGRA,
+                                    pixelBufferAttributes as CFDictionary,
+                                    &renderedBuffer
+                                )
 
-                            if status == kCVReturnSuccess, let buffer = renderedBuffer {
-                                context.render(ciImage, to: buffer)
+                                if status == kCVReturnSuccess, let buffer = renderedBuffer {
+                                    context.render(ciImage, to: buffer)
 
-                                // Propagate camera intrinsic matrix to the rendered pixel buffer
+                                    if let matrix = cameraIntrinsicMatrix {
+                                        CMSetAttachment(
+                                            buffer,
+                                            key: kCMSampleBufferAttachmentKey_CameraIntrinsicMatrix,
+                                            value: matrix,
+                                            attachmentMode: kCMAttachmentMode_ShouldPropagate
+                                        )
+                                    }
+
+                                    if pixelBufferAdaptor.append(buffer, withPresentationTime: presentationTime) {
+                                        framesWritten += 1
+                                        let progress = totalFrames > 0 ? min(Double(framesWritten) / Double(totalFrames), 1.0) : 0
+                                        if Int(framesWritten) % max(1, totalFrames / 10) == 0 {
+                                            Task { @MainActor in
+                                                progressHandler(progress)
+                                            }
+                                        }
+                                    }
+                                }
+                            } else {
+                                // FIX: HDR-preserving path — pass the decoded 10-bit pixel buffer
+                                // directly to the adaptor without going through CIContext/BGRA.
+                                // CIContext always outputs BGRA (8-bit SDR), so routing HDR frames
+                                // through it was silently destroying all HDR/Dolby Vision data even
+                                // when removeHDR was false. Direct passthrough keeps the 10-bit
+                                // values and transfer function (HLG/PQ) intact.
                                 if let matrix = cameraIntrinsicMatrix {
                                     CMSetAttachment(
-                                        buffer,
+                                        pixelBuffer,
                                         key: kCMSampleBufferAttachmentKey_CameraIntrinsicMatrix,
                                         value: matrix,
                                         attachmentMode: kCMAttachmentMode_ShouldPropagate
                                     )
                                 }
 
-                                if pixelBufferAdaptor.append(buffer, withPresentationTime: presentationTime) {
+                                if pixelBufferAdaptor.append(pixelBuffer, withPresentationTime: presentationTime) {
                                     framesWritten += 1
                                     let progress = totalFrames > 0 ? min(Double(framesWritten) / Double(totalFrames), 1.0) : 0
                                     if Int(framesWritten) % max(1, totalFrames / 10) == 0 {

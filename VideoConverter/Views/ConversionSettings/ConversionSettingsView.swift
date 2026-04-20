@@ -81,7 +81,7 @@ struct ConversionSettingsView: View {
                 .padding(16)
                 .background(.ultraThinMaterial)
             }
-            .background(Color(.systemGroupedBackground))
+            .background(Color(.systemBackground))
             .navigationTitle("Conversion Settings")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
