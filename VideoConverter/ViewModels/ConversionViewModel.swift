@@ -110,9 +110,20 @@ final class ConversionViewModel {
         job.status = .converting
 
         do {
-            let outputURL = try await service.convert(job: job) { @MainActor progress in
-                job.progress = progress
-            }
+            let outputURL = try await service.convert(
+                job: job,
+                downloadProgressHandler: { @MainActor progress in
+                    // Only update while we are still in the download phase
+                    // (encoding progress starts at 0 after the asset is loaded).
+                    if job.downloadProgress != nil || progress < 1.0 {
+                        job.downloadProgress = progress
+                    }
+                },
+                progressHandler: { @MainActor progress in
+                    job.downloadProgress = nil   // asset ready, encoding started
+                    job.progress = progress
+                }
+            )
             job.outputURL = outputURL
 
             // Capture file size before moving to library

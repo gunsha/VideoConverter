@@ -104,7 +104,7 @@ final class PhotoLibraryService: NSObject, PHPhotoLibraryChangeObserver {
     // MARK: - Private helpers
 
     private nonisolated func buildVideoAsset(from phAsset: PHAsset) async -> VideoAsset? {
-        guard let avAsset = await loadAVURLAsset(for: phAsset) else { return nil }
+        guard let avAsset = await loadAVAsset(for: phAsset) else { return nil }
 
         // Load video tracks
         guard let tracks = try? await avAsset.loadTracks(withMediaType: .video),
@@ -113,11 +113,16 @@ final class PhotoLibraryService: NSObject, PHPhotoLibraryChangeObserver {
         let formatDescriptions = (try? await videoTrack.load(.formatDescriptions)) ?? []
         let codec = codecName(from: formatDescriptions.first)
         let frameRate = (try? await videoTrack.load(.nominalFrameRate)).map(Double.init) ?? 30.0
-        let naturalSize = (try? await videoTrack.load(.naturalSize)) ?? CGSize(width: phAsset.pixelWidth, height: phAsset.pixelHeight)
+        // Always use PHAsset pixel dimensions — they are authoritative from the Photos
+        // database and are correct even for iCloud-offloaded assets. Loading naturalSize
+        // from the AVAsset would give the proxy resolution (e.g. 640×360) for assets
+        // that are not yet downloaded locally.
+        let naturalSize = CGSize(width: phAsset.pixelWidth, height: phAsset.pixelHeight)
         let mediaCharacteristics = (try? await videoTrack.load(.mediaCharacteristics)) ?? []
         let isHDR = mediaCharacteristics.contains(.containsHDRVideo)
 
-        let fileSize = await getVideoFileSize(for: phAsset)
+        // Derive file size from the asset already in hand — no second requestAVAsset call.
+        let fileSize = fileSizeFromAsset(avAsset, phAsset: phAsset)
         let filename = getFilename(for: phAsset)
         
         // Extract lens and camera metadata
@@ -143,6 +148,26 @@ final class PhotoLibraryService: NSObject, PHPhotoLibraryChangeObserver {
             cameraModel: metadata.cameraModel,
             software: metadata.software
         )
+    }
+
+    /// Returns the on-disk file size without making any additional PHImageManager request.
+    /// - For a locally available `AVURLAsset` it reads the file attributes directly.
+    /// - For an iCloud-proxied `AVComposition` it reads the size from `PHAssetResource`
+    ///   (available without a download; falls back to 0 if unavailable).
+    private nonisolated func fileSizeFromAsset(_ avAsset: AVAsset, phAsset: PHAsset) -> Int64 {
+        if let urlAsset = avAsset as? AVURLAsset {
+            // Local file — read the size directly from the filesystem.
+            let attrs = try? FileManager.default.attributesOfItem(atPath: urlAsset.url.path)
+            return (attrs?[.size] as? Int64) ?? 0
+        }
+        // iCloud proxy (AVComposition) — PHAssetResource carries the original size
+        // as reported by the server, so we can show the right value without downloading.
+        let resources = PHAssetResource.assetResources(for: phAsset)
+        if let res = resources.first(where: { $0.type == .video }) {
+            // The runtime returns an NSNumber, not a Swift Int64, so cast via NSNumber.
+            if let size = (res.value(forKey: "fileSize") as? NSNumber)?.int64Value, size > 0 { return size }
+        }
+        return 0
     }
     
     private nonisolated func extractLensMetadataFromAVAsset(_ avAsset: AVAsset) async -> (lensMake: String?, lensModel: String?, cameraMake: String?, cameraModel: String?, software: String?) {
@@ -251,50 +276,21 @@ final class PhotoLibraryService: NSObject, PHPhotoLibraryChangeObserver {
         return (lensMake, lensModel, cameraMake, cameraModel, software)
     }
 
-    private nonisolated func loadAVURLAsset(for phAsset: PHAsset) async -> AVURLAsset? {
+    private nonisolated func loadAVAsset(for phAsset: PHAsset) async -> AVAsset? {
         await withCheckedContinuation { continuation in
             let options = PHVideoRequestOptions()
-            options.isNetworkAccessAllowed = false
-            options.deliveryMode = .fastFormat
-            PHImageManager.default().requestAVAsset(forVideo: phAsset, options: options) { avAsset, _, _ in
-                continuation.resume(returning: avAsset as? AVURLAsset)
-            }
-        }
-    }
-    
-    private nonisolated func loadAVAssetForMetadata(for phAsset: PHAsset) async -> AVAsset? {
-        await withCheckedContinuation { continuation in
-            let options = PHVideoRequestOptions()
-            options.isNetworkAccessAllowed = false
+            // Allow network access so iCloud-offloaded videos (common on devices with
+            // "Optimize iPhone Storage" enabled) are not silently dropped.
+            options.isNetworkAccessAllowed = true
             options.deliveryMode = .fastFormat
             PHImageManager.default().requestAVAsset(forVideo: phAsset, options: options) { avAsset, _, _ in
                 continuation.resume(returning: avAsset)
             }
         }
     }
+    
 
-    private nonisolated func getVideoFileSize(for phAsset: PHAsset) async -> Int64 {
-        await withCheckedContinuation { continuation in
-            let options = PHVideoRequestOptions()
-            options.isNetworkAccessAllowed = false
-            options.deliveryMode = .fastFormat
-            PHImageManager.default().requestAVAsset(forVideo: phAsset, options: options) { avAsset, _, _ in
-                guard let avAsset = avAsset as? AVURLAsset else {
-                    continuation.resume(returning: 0)
-                    return
-                }
-                Task.detached {
-                    do {
-                        let attrs = try FileManager.default.attributesOfItem(atPath: avAsset.url.path)
-                        let fileSize = (attrs[.size] as? Int64) ?? 0
-                        await MainActor.run { continuation.resume(returning: fileSize) }
-                    } catch {
-                        await MainActor.run { continuation.resume(returning: 0) }
-                    }
-                }
-            }
-        }
-    }
+
 
     private nonisolated func getFilename(for phAsset: PHAsset) -> String {
         let resources = PHAssetResource.assetResources(for: phAsset)

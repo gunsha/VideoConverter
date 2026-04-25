@@ -19,6 +19,7 @@ final class VideoConversionService {
 
     func convert(
         job: ConversionJob,
+        downloadProgressHandler: @escaping @MainActor (Double) -> Void,
         progressHandler: @escaping @MainActor (Double) -> Void
     ) async throws -> URL {
         let thermal = ProcessInfo.processInfo.thermalState
@@ -55,6 +56,7 @@ final class VideoConversionService {
             from: phAsset,
             to: tempURL,
             job: job,
+            downloadProgressHandler: downloadProgressHandler,
             progressHandler: progressHandler
         )
 
@@ -135,9 +137,10 @@ final class VideoConversionService {
         from phAsset: PHAsset,
         to outputURL: URL,
         job: ConversionJob,
+        downloadProgressHandler: @escaping @MainActor (Double) -> Void,
         progressHandler: @escaping @MainActor (Double) -> Void
     ) async throws {
-        let avAsset = try await loadAVAsset(from: phAsset)
+        let avAsset = try await loadAVAsset(from: phAsset, downloadProgressHandler: downloadProgressHandler)
         let duration = try await avAsset.load(.duration)
         let durationSeconds = duration.seconds
 
@@ -576,11 +579,17 @@ final class VideoConversionService {
         }
     }
 
-    private func loadAVAsset(from phAsset: PHAsset) async throws -> AVAsset {
+    private func loadAVAsset(from phAsset: PHAsset, downloadProgressHandler: (@MainActor (Double) -> Void)? = nil) async throws -> AVAsset {
         try await withCheckedThrowingContinuation { cont in
             let options = PHVideoRequestOptions()
             options.isNetworkAccessAllowed = true
             options.deliveryMode = .highQualityFormat
+            options.progressHandler = { progress, _, _, _ in
+                // progressHandler is called on an arbitrary background thread.
+                Task { @MainActor in
+                    downloadProgressHandler?(progress)
+                }
+            }
             PHImageManager.default().requestAVAsset(forVideo: phAsset, options: options) { asset, _, info in
                 if let error = info?[PHImageErrorKey] as? Error {
                     ConversionLogger.error("Load asset error: \(error.localizedDescription)")

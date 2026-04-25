@@ -38,8 +38,26 @@ struct JobRowView: View {
                 }
             }
 
-            // Progress bar (shown only while converting)
-            if job.status == .converting {
+            // iCloud download phase
+            if job.status == .converting, let dlProgress = job.downloadProgress {
+                VStack(alignment: .leading, spacing: 4) {
+                    ProgressView(value: dlProgress)
+                        .tint(.blue)
+                        .animation(.linear(duration: 0.3), value: dlProgress)
+                    Label(
+                        dlProgress < 0.01
+                            ? "Downloading from iCloud…"
+                            : "Downloading from iCloud… \(Int(dlProgress * 100))%",
+                        systemImage: "icloud.and.arrow.down"
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.blue)
+                    .contentTransition(.numericText())
+                }
+            }
+
+            // Encoding phase
+            if job.status == .converting, job.downloadProgress == nil {
                 VStack(alignment: .leading, spacing: 4) {
                     ProgressView(value: job.progress)
                         .tint(Color.accentColor)

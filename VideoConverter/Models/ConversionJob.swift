@@ -45,6 +45,8 @@ final class ConversionJob: Identifiable {
 
     var status: ConversionStatus = .pending
     var progress: Double = 0.0
+    /// Non-nil while the asset is being downloaded from iCloud (0–1).
+    var downloadProgress: Double? = nil
     var outputURL: URL?
     var outputAssetIdentifier: String?
 
