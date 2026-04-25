@@ -7,33 +7,69 @@ import Photos
 struct VideoDetailsList: View {
     let asset: VideoAsset
 
+    @State private var cameraMake: String?
+    @State private var cameraModel: String?
+    @State private var lensMake: String?
+    @State private var lensModel: String?
+    @State private var software: String?
+    @State private var isLoadingMetadata = false
+
+    init(asset: VideoAsset) {
+        self.asset = asset
+        _cameraMake = State(initialValue: asset.cameraMake)
+        _cameraModel = State(initialValue: asset.cameraModel)
+        _lensMake = State(initialValue: asset.lensMake)
+        _lensModel = State(initialValue: asset.lensModel)
+        _software = State(initialValue: asset.software)
+        
+        let hasAny = asset.cameraMake != nil || asset.cameraModel != nil || asset.lensMake != nil || asset.lensModel != nil || asset.software != nil
+        _isLoadingMetadata = State(initialValue: !hasAny && asset.phAsset != nil)
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             CollapsibleSection(title: "Camera details", isInitiallyCollapsed: true) {
                 VStack(alignment: .leading, spacing: 8) {
-                    if let cameraMake = asset.cameraMake {
-                        DetailRow(label: "Camera", value: cameraMake)
-                    }
-                    if let cameraModel = asset.cameraModel {
-                        DetailRow(label: "Camera model", value: cameraModel)
-                    }
-                    if let lensMake = asset.lensMake {
-                        DetailRow(label: "Lens make", value: lensMake)
-                    }
-                    if let lensModel = asset.lensModel {
-                        DetailRow(label: "Lens model", value: lensModel)
-                    }
-                    if let software = asset.software {
-                        DetailRow(label: "Software", value: software)
-                    }
-                    if asset.cameraMake == nil && asset.cameraModel == nil &&
-                        asset.lensMake == nil && asset.lensModel == nil && asset.software == nil {
-                        Text("No device info available")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                    if isLoadingMetadata {
+                        ProgressView()
+                            .progressViewStyle(.circular)
+                            .frame(maxWidth: .infinity, alignment: .center)
+                            .padding(.vertical, 8)
+                    } else {
+                        if let cameraMake = cameraMake {
+                            DetailRow(label: "Camera", value: cameraMake)
+                        }
+                        if let cameraModel = cameraModel {
+                            DetailRow(label: "Camera model", value: cameraModel)
+                        }
+                        if let lensMake = lensMake {
+                            DetailRow(label: "Lens make", value: lensMake)
+                        }
+                        if let lensModel = lensModel {
+                            DetailRow(label: "Lens model", value: lensModel)
+                        }
+                        if let software = software {
+                            DetailRow(label: "Software", value: software)
+                        }
+                        if cameraMake == nil && cameraModel == nil &&
+                            lensMake == nil && lensModel == nil && software == nil {
+                            Text("No device info available")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
                     }
                 }
             }
+        }
+        .task {
+            guard isLoadingMetadata, let phAsset = asset.phAsset else { return }
+            let metadata = await PhotoLibraryService.fetchCameraMetadata(for: phAsset)
+            cameraMake = metadata.cameraMake
+            cameraModel = metadata.cameraModel
+            lensMake = metadata.lensMake
+            lensModel = metadata.lensModel
+            software = metadata.software
+            isLoadingMetadata = false
         }
     }
 }
