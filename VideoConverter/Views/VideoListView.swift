@@ -13,6 +13,7 @@ struct VideoListView: View {
     @State private var showingProgress = false
     @State private var showingStorageAnalysis = false
     @State private var resultJob: ConversionJob?        // completed job overlay
+    @State private var fixDateItem: FixDateItem?        // fix-date swipe action
 
     var body: some View {
         @Bindable var conversionVM = conversionVM
@@ -32,6 +33,20 @@ struct VideoListView: View {
         // Storage analysis sheet
         .sheet(isPresented: $showingStorageAnalysis) {
             StorageAnalysisView()
+        }
+        // Fix date confirmation sheet
+        .sheet(item: $fixDateItem) { item in
+            FixDateConfirmationView(
+                asset: item.asset,
+                proposedDate: item.date,
+                onConfirm: {
+                    guard let phAsset = item.asset.phAsset else { return }
+                    try await DateMetadataService.applyDate(item.date, to: phAsset)
+                    fixDateItem = nil
+                    await listVM.updateAssetDate(id: item.asset.id, newDate: item.date)
+                },
+                onCancel: { fixDateItem = nil }
+            )
         }
         // Video preview
         .fullScreenCover(item: $previewingAsset) { asset in
@@ -105,6 +120,17 @@ struct VideoListView: View {
                                 Label("Convert", systemImage: "arrow.triangle.2.circlepath")
                             }
                             .tint(Color.accentColor)
+
+                            // Fix Date action — only shown when a valid date can be
+                            // parsed from the filename.
+                            if let proposed = DateMetadataService.dateFromFilename(asset.filename) {
+                                Button {
+                                    fixDateItem = FixDateItem(asset: asset, date: proposed)
+                                } label: {
+                                    Label("Fix Date", systemImage: "calendar.badge.exclamationmark")
+                                }
+                                .tint(.orange)
+                            }
                         }
                 }
                 .listRowBackground(Color.clear)
@@ -324,3 +350,11 @@ private struct RefreshKey: PreferenceKey {
         value.append(contentsOf: nextValue())
     }
 }
+
+// MARK: - Fix Date item (Identifiable wrapper for sheet(item:))
+private struct FixDateItem: Identifiable {
+    let asset: VideoAsset
+    let date: Date
+    var id: String { asset.id }
+}
+

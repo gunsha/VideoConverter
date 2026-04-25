@@ -188,6 +188,21 @@ final class VideoListViewModel {
         await cacheService.clear()
     }
 
+    /// Patches the creation date of a single asset in-memory and persists it to the cache.
+    /// Avoids a PHKit round-trip whose cached PHAsset object may not yet reflect the write.
+    func updateAssetDate(id: String, newDate: Date) async {
+        guard let idx = rawVideos.firstIndex(where: { $0.id == id }) else { return }
+        rawVideos[idx] = rawVideos[idx].withCreationDate(newDate)
+        applyFilters()
+
+        let cache = VideoCache(
+            assets: rawVideos.map { CachedVideoAsset(from: $0) },
+            cachedAt: Date(),
+            photoLibraryVersion: ""
+        )
+        await cacheService.save(cache)
+    }
+
     private func applyFilters() {
         var result = rawVideos
         

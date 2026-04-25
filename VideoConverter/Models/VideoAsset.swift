@@ -122,4 +122,28 @@ extension VideoAsset {
         }
         return options.sorted()
     }
+
+    /// Returns a copy of this asset with a different creationDate.
+    func withCreationDate(_ date: Date) -> VideoAsset {
+        VideoAsset(
+            id: id,
+            phAsset: phAsset,
+            filename: filename,
+            fileSize: fileSize,
+            duration: duration,
+            creationDate: date,
+            modificationDate: modificationDate,
+            resolution: resolution,
+            frameRate: frameRate,
+            codec: codec,
+            isHDR: isHDR,
+            locationCoordinate: locationCoordinate,
+            isFavorite: isFavorite,
+            lensMake: lensMake,
+            lensModel: lensModel,
+            cameraMake: cameraMake,
+            cameraModel: cameraModel,
+            software: software
+        )
+    }
 }
