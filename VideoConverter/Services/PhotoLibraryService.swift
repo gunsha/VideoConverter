@@ -160,12 +160,18 @@ final class PhotoLibraryService: NSObject, PHPhotoLibraryChangeObserver {
             let attrs = try? FileManager.default.attributesOfItem(atPath: urlAsset.url.path)
             return (attrs?[.size] as? Int64) ?? 0
         }
-        // iCloud proxy (AVComposition) — PHAssetResource carries the original size
-        // as reported by the server, so we can show the right value without downloading.
+        // iCloud proxy (AVComposition): the asset has two video resources:
+        //   .fullSizeVideo — the original full-resolution file stored in iCloud
+        //   .video         — the local low-res proxy (~10% of original size)
+        // We must prefer .fullSizeVideo to get the correct original file size.
         let resources = PHAssetResource.assetResources(for: phAsset)
-        if let res = resources.first(where: { $0.type == .video }) {
-            // The runtime returns an NSNumber, not a Swift Int64, so cast via NSNumber.
-            if let size = (res.value(forKey: "fileSize") as? NSNumber)?.int64Value, size > 0 { return size }
+        for resourceType in [PHAssetResourceType.fullSizeVideo, .video] {
+            if let res = resources.first(where: { $0.type == resourceType }) {
+                // The runtime returns an NSNumber, not a Swift Int64, so cast via NSNumber.
+                if let size = (res.value(forKey: "fileSize") as? NSNumber)?.int64Value, size > 0 {
+                    return size
+                }
+            }
         }
         return 0
     }
