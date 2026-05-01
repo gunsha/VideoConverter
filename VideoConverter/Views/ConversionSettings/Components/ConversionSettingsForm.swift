@@ -106,6 +106,12 @@ struct ConversionSettingsForm: View {
                         targetBitrate: targetBitrate,
                         inputBitrate: inputBitrate
                     )
+
+                    BitratePresets(
+                        bitratePercent: $bitratePercent,
+                        inputBitrate: inputBitrate
+                    )
+
                     Divider()
                 }
 
@@ -266,6 +272,55 @@ private struct BitrateSlider: View {
             return String(format: "%.0f kbps", Double(bitsPerSecond) / 1_000)
         }
         return "\(bitsPerSecond) bps"
+    }
+}
+
+private struct BitratePresets: View {
+    @Binding var bitratePercent: Double
+    let inputBitrate: Int
+
+    private let presets: [(label: String, bps: Int)] = [
+        ("1 Mbps", 1_000_000),
+        ("2 Mbps", 2_000_000),
+        ("3 Mbps", 3_000_000),
+        ("4 Mbps", 4_000_000),
+        ("5 Mbps", 5_000_000)
+    ]
+
+    private var availablePresets: [(label: String, bps: Int)] {
+        presets.filter { Double($0.bps) < Double(inputBitrate) * 0.9 }
+    }
+
+    var body: some View {
+        if !availablePresets.isEmpty {
+            let columns = [
+                GridItem(.flexible()),
+                GridItem(.flexible()),
+                GridItem(.flexible()),
+                GridItem(.flexible()),
+                GridItem(.flexible())
+            ]
+            LazyVGrid(columns: columns, spacing: 8) {
+                ForEach(availablePresets, id: \.bps) { preset in
+                    Button {
+                        let percent = max(10, min(100, (Double(preset.bps) / Double(inputBitrate)) * 100))
+                        withAnimation {
+                            bitratePercent = percent
+                        }
+                    } label: {
+                        Text(preset.label)
+                            .font(.caption)
+                            .fontWeight(.medium)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 6)
+                            .frame(maxWidth: .infinity)
+                            .background(Color(.tertiarySystemBackground))
+                            .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
     }
 }
 
