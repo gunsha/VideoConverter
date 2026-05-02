@@ -126,7 +126,7 @@ public enum VideoPickerError: LocalizedError {
 
 // MARK: - PHPicker representable
 
-private struct VideoPHPicker: UIViewControllerRepresentable {
+struct VideoPHPicker: UIViewControllerRepresentable {
 
     @Binding var isPresented: Bool
     let viewModel: VideoPickerViewModel

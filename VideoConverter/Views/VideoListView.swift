@@ -18,6 +18,10 @@ struct VideoListView: View {
     @State private var showRefreshAlert = false          // refresh confirmation dialog
     @State private var dragOffset: CGFloat = 0
     private let refreshThreshold: CGFloat = 80
+    
+    @State private var isLoadingPickerAsset = false
+    @State private var pickerViewModel = VideoPickerViewModel()
+    @State private var pickerPhotoLibraryService = PhotoLibraryService()
 
     var body: some View {
         @Bindable var conversionVM = conversionVM
@@ -29,6 +33,11 @@ struct VideoListView: View {
         // Settings sheet (single video)
         .sheet(item: $settingsTarget) { asset in
             ConversionSettingsView(asset: asset, conversionVM: conversionVM)
+        }
+        // Video picker sheet
+        .sheet(isPresented: $pickerViewModel.isPresented) {
+            VideoPHPicker(isPresented: $pickerViewModel.isPresented, viewModel: pickerViewModel)
+                .ignoresSafeArea()
         }
         // Progress sheet
         .sheet(isPresented: $conversionVM.showingProgress) {
@@ -181,6 +190,21 @@ struct VideoListView: View {
     private var toolbarItems: some ToolbarContent {
         @Bindable var listVM = listVM
 
+        // Add video button
+        ToolbarItem(placement: .topBarLeading) {
+            Button {
+                pickerViewModel.onPick = { result in
+                    self.loadVideoFromPicker(identifier: result.localIdentifier)
+                }
+                pickerViewModel.onError = { error in
+                    print("Video picker error: \(error.localizedDescription)")
+                }
+                pickerViewModel.isPresented = true
+            } label: {
+                Image(systemName: "plus")
+            }
+        }
+
         // Filter & Sort menu
         ToolbarItem(placement: .topBarLeading) {
             Menu {
@@ -241,6 +265,23 @@ struct VideoListView: View {
                 showingStorageAnalysis = true
             } label: {
                 Label("Storage", systemImage: "chart.pie")
+            }
+        }
+    }
+    
+    private func loadVideoFromPicker(identifier: String) {
+        isLoadingPickerAsset = true
+        Task {
+            if let asset = await pickerPhotoLibraryService.fetchVideoAsset(by: identifier) {
+                await MainActor.run {
+                    settingsTarget = asset
+                    isLoadingPickerAsset = false
+                }
+            } else {
+                print("Failed to load video asset with identifier: \(identifier)")
+                await MainActor.run {
+                    isLoadingPickerAsset = false
+                }
             }
         }
     }
