@@ -208,13 +208,8 @@ public struct VideoPickerButton: View {
             viewModel.isPresented = true
         } label: {
             HStack(spacing: 8) {
-                if viewModel.isLoading {
-                    ProgressView()
-                        .tint(.white)
-                } else {
-                    Image(systemName: "video.badge.plus")
-                }
-                Text(viewModel.isLoading ? "Loading…" : label)
+                Image(systemName: "video.badge.plus")
+                Text(label)
                     .fontWeight(.semibold)
             }
             .frame(maxWidth: .infinity)
@@ -222,6 +217,21 @@ public struct VideoPickerButton: View {
             .padding(.horizontal, 20)
             .background(Color.accentColor, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             .foregroundStyle(.white)
+            .overlay {
+                if viewModel.isLoading {
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(Color.black.opacity(0.6))
+                        .overlay {
+                            HStack(spacing: 12) {
+                                ProgressView()
+                                    .tint(.white)
+                                Text("Loading…")
+                                    .fontWeight(.semibold)
+                                    .foregroundStyle(.white)
+                            }
+                        }
+                }
+            }
         }
         .disabled(viewModel.isLoading)
         .sheet(isPresented: $viewModel.isPresented) {

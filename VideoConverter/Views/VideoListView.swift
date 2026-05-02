@@ -109,7 +109,25 @@ struct VideoListView: View {
                     }
             }
         }
+        .overlay {
+            if isLoadingPickerAsset || pickerViewModel.isLoading {
+                Color.black.opacity(0.4)
+                    .ignoresSafeArea()
+                    .transition(.opacity)
+
+                VStack(spacing: 16) {
+                    ProgressView()
+                        .controlSize(.large)
+                        .tint(.white)
+                    Text("Loading video…")
+                        .fontWeight(.medium)
+                        .foregroundStyle(.white)
+                }
+                .transition(.scale.combined(with: .opacity))
+            }
+        }
         .animation(.spring(duration: 0.35), value: showRefreshConfirmation)
+        .animation(.spring(duration: 0.25), value: isLoadingPickerAsset)
         .alert("Refresh Library", isPresented: $showRefreshAlert) {
             Button("Refresh") {
                 Task {
@@ -201,8 +219,13 @@ struct VideoListView: View {
                 }
                 pickerViewModel.isPresented = true
             } label: {
-                Image(systemName: "plus")
+                if isLoadingPickerAsset {
+                    ProgressView()
+                } else {
+                    Image(systemName: "plus")
+                }
             }
+            .disabled(isLoadingPickerAsset)
         }
 
         // Filter & Sort menu
