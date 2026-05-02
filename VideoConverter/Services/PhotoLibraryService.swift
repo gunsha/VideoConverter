@@ -98,12 +98,12 @@ final class PhotoLibraryService: NSObject, PHPhotoLibraryChangeObserver {
         guard let phAsset = PHAsset.fetchAssets(withLocalIdentifiers: [identifier], options: nil).firstObject else {
             return nil
         }
-        return await buildVideoAsset(from: phAsset)
+        return await buildVideoAsset(from: phAsset, preferLocalURL: true)
     }
 
     // MARK: - Private helpers
 
-    private nonisolated func buildVideoAsset(from phAsset: PHAsset) async -> VideoAsset? {
+    private nonisolated func buildVideoAsset(from phAsset: PHAsset, preferLocalURL: Bool = false) async -> VideoAsset? {
         guard let avAsset = await loadAVAsset(for: phAsset) else { return nil }
 
         // Load video tracks
@@ -121,8 +121,18 @@ final class PhotoLibraryService: NSObject, PHPhotoLibraryChangeObserver {
         let mediaCharacteristics = (try? await videoTrack.load(.mediaCharacteristics)) ?? []
         let isHDR = mediaCharacteristics.contains(.containsHDRVideo)
 
-        // Option C: resolve both filename and file size in a single PHAssetResource pass.
-        let info = resourceInfo(for: phAsset, avAsset: avAsset)
+        // Get file size from local URL to avoid PHAssetResource prefetch warning,
+        // but get filename from PHAssetResource to preserve original name
+        let fileSize: Int64
+        let filename: String
+        if preferLocalURL, let urlAsset = avAsset as? AVURLAsset {
+            fileSize = getFileSizeFromURL(urlAsset.url)
+            filename = getOriginalFilename(for: phAsset)
+        } else {
+            let info = resourceInfo(for: phAsset, avAsset: avAsset)
+            fileSize = info.fileSize
+            filename = info.filename
+        }
 
         // Lens/camera metadata is deferred — it requires 4 extra async AVAsset loads
         // per video and is only shown in the detail/settings sheet. It stays nil here
@@ -130,8 +140,8 @@ final class PhotoLibraryService: NSObject, PHPhotoLibraryChangeObserver {
         return VideoAsset(
             id: phAsset.localIdentifier,
             phAsset: phAsset,
-            filename: info.filename,
-            fileSize: info.fileSize,
+            filename: filename,
+            fileSize: fileSize,
             duration: phAsset.duration,
             creationDate: phAsset.creationDate,
             modificationDate: phAsset.modificationDate,
@@ -143,6 +153,24 @@ final class PhotoLibraryService: NSObject, PHPhotoLibraryChangeObserver {
             isFavorite: phAsset.isFavorite
             // lensMake, lensModel, cameraMake, cameraModel, software default to nil
         )
+    }
+    
+    private nonisolated func getFileSizeFromURL(_ url: URL) -> Int64 {
+        guard let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
+              let size = attrs[.size] as? Int64 else {
+            return 0
+        }
+        return size
+    }
+    
+    private nonisolated func getOriginalFilename(for phAsset: PHAsset) -> String {
+        let resources = PHAssetResource.assetResources(for: phAsset)
+        if let videoResource = resources.first(where: { $0.type == .video }) {
+            return videoResource.originalFilename
+        } else if let any = resources.first {
+            return any.originalFilename
+        }
+        return "video_\(phAsset.localIdentifier)"
     }
 
     /// Resolves both the original filename and the on-disk file size in a single
