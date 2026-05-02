@@ -3,44 +3,49 @@
 
 import SwiftUI
 import Photos
+import Combine
+
+final class CameraMetadataState: ObservableObject {
+    @Published var cameraMake: String?
+    @Published var cameraModel: String?
+    @Published var lensMake: String?
+    @Published var lensModel: String?
+    @Published var software: String?
+    @Published var isLoadingMetadata = false
+}
 
 struct VideoDetailsList: View {
     let asset: VideoAsset
 
-    @State private var cameraMake: String?
-    @State private var cameraModel: String?
-    @State private var lensMake: String?
-    @State private var lensModel: String?
-    @State private var software: String?
-    @State private var isLoadingMetadata = false
+    @StateObject private var metadataState = CameraMetadataState()
 
     var body: some View {
         VStack(spacing: 0) {
             CollapsibleSection(title: "Camera details", isInitiallyCollapsed: true) {
                 VStack(alignment: .leading, spacing: 8) {
-                    if isLoadingMetadata {
+                    if metadataState.isLoadingMetadata {
                         ProgressView()
                             .progressViewStyle(.circular)
                             .frame(maxWidth: .infinity, alignment: .center)
                             .padding(.vertical, 8)
                     } else {
-                        if let cameraMake = cameraMake {
+                        if let cameraMake = metadataState.cameraMake {
                             DetailRow(label: "Camera", value: cameraMake)
                         }
-                        if let cameraModel = cameraModel {
+                        if let cameraModel = metadataState.cameraModel {
                             DetailRow(label: "Camera model", value: cameraModel)
                         }
-                        if let lensMake = lensMake {
+                        if let lensMake = metadataState.lensMake {
                             DetailRow(label: "Lens make", value: lensMake)
                         }
-                        if let lensModel = lensModel {
+                        if let lensModel = metadataState.lensModel {
                             DetailRow(label: "Lens model", value: lensModel)
                         }
-                        if let software = software {
+                        if let software = metadataState.software {
                             DetailRow(label: "Software", value: software)
                         }
-                        if cameraMake == nil && cameraModel == nil &&
-                            lensMake == nil && lensModel == nil && software == nil {
+                        if metadataState.cameraMake == nil && metadataState.cameraModel == nil &&
+                            metadataState.lensMake == nil && metadataState.lensModel == nil && metadataState.software == nil {
                             Text("No device info available")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
@@ -51,31 +56,29 @@ struct VideoDetailsList: View {
         }
         .task(id: asset.id) {
             // First, apply any existing metadata from the asset
-            cameraMake = asset.cameraMake
-            cameraModel = asset.cameraModel
-            lensMake = asset.lensMake
-            lensModel = asset.lensModel
-            software = asset.software
+            metadataState.cameraMake = asset.cameraMake
+            metadataState.cameraModel = asset.cameraModel
+            metadataState.lensMake = asset.lensMake
+            metadataState.lensModel = asset.lensModel
+            metadataState.software = asset.software
             
             let hasAny = asset.cameraMake != nil || asset.cameraModel != nil || asset.lensMake != nil || asset.lensModel != nil || asset.software != nil
             
             guard !hasAny, let phAsset = asset.phAsset else {
-                isLoadingMetadata = false
+                metadataState.isLoadingMetadata = false
                 return
             }
             
-            isLoadingMetadata = true
+            metadataState.isLoadingMetadata = true
             
             let metadata = await PhotoLibraryService.fetchCameraMetadata(for: phAsset)
             
-            await MainActor.run {
-                cameraMake = metadata.cameraMake
-                cameraModel = metadata.cameraModel
-                lensMake = metadata.lensMake
-                lensModel = metadata.lensModel
-                software = metadata.software
-                isLoadingMetadata = false
-            }
+            metadataState.cameraMake = metadata.cameraMake
+            metadataState.cameraModel = metadata.cameraModel
+            metadataState.lensMake = metadata.lensMake
+            metadataState.lensModel = metadata.lensModel
+            metadataState.software = metadata.software
+            metadataState.isLoadingMetadata = false
         }
     }
 }
