@@ -166,48 +166,44 @@ struct VideoListView: View {
             }
         }
 
-        // Filter menu
+        // Filter & Sort menu (grouped)
         ToolbarItem(placement: .topBarLeading) {
             Menu {
-                Section("Size") {
+                Section("Filter") {
                     Picker("Size", selection: $listVM.sizeFilter) {
                         ForEach(VideoListViewModel.SizeRange.allCases) { range in
                             Text(range.rawValue).tag(range)
                         }
-                    }
-                    .pickerStyle(.inline)
-                    .labelsHidden()
-                }
-                Section("Frame Rate") {
-                    Picker("FPS", selection: $listVM.fpsFilter) {
+                    }.pickerStyle(.menu)
+
+                    Picker("Frame Rate", selection: $listVM.fpsFilter) {
                         Text("All").tag(nil as VideoListViewModel.FPSFilterOption?)
                         ForEach(listVM.availableFPSOptions.filter { $0.fps > 0 }) { option in
                             Text(option.label).tag(option as VideoListViewModel.FPSFilterOption?)
                         }
                     }
-                }
-                if listVM.sizeFilter != .all || listVM.fpsFilter != nil {
-                    Divider()
-                    Button("Clear Filters") {
-                        listVM.sizeFilter = .all
-                        listVM.fpsFilter = nil
-                    }
-                }
-            } label: {
-                Label("Filter", systemImage: listVM.sizeFilter != .all || listVM.fpsFilter != nil ? "slider.horizontal.3" : "slider.horizontal.3")
-            }
-        }
+                    .pickerStyle(.menu)
 
-        // Sort menu
-        ToolbarItem(placement: .topBarLeading) {
-            Menu {
-                Picker("Sort", selection: $listVM.sortOrder) {
-                    ForEach(VideoListViewModel.SortOrder.allCases) { order in
-                        Label(order.rawValue, systemImage: order.systemImage).tag(order)
+                    if listVM.sizeFilter != .all || listVM.fpsFilter != nil {
+                        Button("Clear Filters") {
+                            listVM.sizeFilter = .all
+                            listVM.fpsFilter = nil
+                        }
                     }
+                    Picker("Sort", selection: $listVM.sortOrder) {
+                        ForEach(VideoListViewModel.SortOrder.allCases) { order in
+                            Label(order.rawValue, systemImage: order.systemImage).tag(order)
+                        }
+                    }
+                    .pickerStyle(.menu)
                 }
             } label: {
-                Label("Sort", systemImage: "line.3.horizontal.decrease.circle")
+                Label(
+                    "Filter & Sort",
+                    systemImage: listVM.sizeFilter != .all || listVM.fpsFilter != nil
+                        ? "line.3.horizontal.decrease.circle.fill"
+                        : "line.3.horizontal.decrease.circle"
+                )
             }
         }
 
