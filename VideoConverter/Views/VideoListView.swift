@@ -14,6 +14,7 @@ struct VideoListView: View {
     @State private var showingStorageAnalysis = false
     @State private var resultJob: ConversionJob?        // completed job overlay
     @State private var fixDateItem: FixDateItem?        // fix-date swipe action
+    @State private var showRefreshConfirmation = false  // refresh toast
 
     var body: some View {
         @Bindable var conversionVM = conversionVM
@@ -81,10 +82,23 @@ struct VideoListView: View {
             }
         }
         .task { await listVM.load() }
-        .modifier(RefreshableModifier(
-            isEnabled: !listVM.isLoading && !listVM.isRefreshing,
-            refreshAction: { await listVM.refresh() }
-        ))
+        .refreshable {
+            await listVM.refresh()
+            showRefreshConfirmation = true
+        }
+        .overlay(alignment: .top) {
+            if showRefreshConfirmation {
+                RefreshConfirmationView()
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .onAppear {
+                        Task {
+                            try? await Task.sleep(for: .seconds(1.5))
+                            withAnimation { showRefreshConfirmation = false }
+                        }
+                    }
+            }
+        }
+        .animation(.spring(duration: 0.35), value: showRefreshConfirmation)
     }
 
     // MARK: - Content
@@ -152,21 +166,7 @@ struct VideoListView: View {
     private var toolbarItems: some ToolbarContent {
         @Bindable var listVM = listVM
 
-        // Refresh button
-        ToolbarItem(placement: .topBarLeading) {
-            Button {
-                Task { await listVM.refresh() }
-            } label: {
-                if listVM.isLoading || listVM.isRefreshing {
-                    ProgressView()
-                        .controlSize(.regular)
-                } else {
-                    Label("Refresh", systemImage: "arrow.clockwise")
-                }
-            }
-        }
-
-        // Filter & Sort menu (grouped)
+        // Filter & Sort menu
         ToolbarItem(placement: .topBarLeading) {
             Menu {
                 Section("Filter") {
@@ -303,54 +303,32 @@ struct VideoListView: View {
     }
 }
 
-private struct RefreshableModifier: ViewModifier {
-    let isEnabled: Bool
-    let refreshAction: () async -> Void
 
-    @State private var isRefreshing = false
-
-    func body(content: Content) -> some View {
-        content
-            .overlay {
-                if isRefreshing {
-                    GeometryReader { geo in
-                        Color.clear.preference(
-                            key: RefreshKey.self,
-                            value: [RefreshPreference(reference: geo.frame(in: .global).origin)]
-                        )
-                    }
-                    .frame(height: 0)
-                }
-            }
-            .onPreferenceChange(RefreshKey.self) { preferences in
-                guard isEnabled, let pref = preferences.first else { return }
-                if -pref.reference.y > 80 {
-                    isRefreshing = true
-                    Task {
-                        await refreshAction()
-                        await MainActor.run { isRefreshing = false }
-                    }
-                }
-            }
-    }
-}
-
-private struct RefreshPreference: Equatable {
-    let reference: CGPoint
-}
-
-private struct RefreshKey: PreferenceKey {
-    static var defaultValue: [RefreshPreference] { [] }
-
-    static func reduce(value: inout [RefreshPreference], nextValue: () -> [RefreshPreference]) {
-        value.append(contentsOf: nextValue())
-    }
-}
 
 // MARK: - Fix Date item (Identifiable wrapper for sheet(item:))
 private struct FixDateItem: Identifiable {
     let asset: VideoAsset
     let date: Date
     var id: String { asset.id }
+}
+
+// MARK: - Refresh Confirmation Toast
+
+private struct RefreshConfirmationView: View {
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "checkmark.circle.fill")
+                .foregroundStyle(.green)
+            Text("Library refreshed")
+                .font(.subheadline)
+                .fontWeight(.medium)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(.regularMaterial)
+        .clipShape(Capsule())
+        .shadow(radius: 4, y: 2)
+        .padding(.top, 8)
+    }
 }
 
