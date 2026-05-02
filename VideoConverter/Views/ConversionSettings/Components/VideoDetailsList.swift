@@ -14,18 +14,6 @@ struct VideoDetailsList: View {
     @State private var software: String?
     @State private var isLoadingMetadata = false
 
-    init(asset: VideoAsset) {
-        self.asset = asset
-        _cameraMake = State(initialValue: asset.cameraMake)
-        _cameraModel = State(initialValue: asset.cameraModel)
-        _lensMake = State(initialValue: asset.lensMake)
-        _lensModel = State(initialValue: asset.lensModel)
-        _software = State(initialValue: asset.software)
-        
-        let hasAny = asset.cameraMake != nil || asset.cameraModel != nil || asset.lensMake != nil || asset.lensModel != nil || asset.software != nil
-        _isLoadingMetadata = State(initialValue: !hasAny && asset.phAsset != nil)
-    }
-
     var body: some View {
         VStack(spacing: 0) {
             CollapsibleSection(title: "Camera details", isInitiallyCollapsed: true) {
@@ -61,15 +49,33 @@ struct VideoDetailsList: View {
                 }
             }
         }
-        .task {
-            guard isLoadingMetadata, let phAsset = asset.phAsset else { return }
+        .task(id: asset.id) {
+            // First, apply any existing metadata from the asset
+            cameraMake = asset.cameraMake
+            cameraModel = asset.cameraModel
+            lensMake = asset.lensMake
+            lensModel = asset.lensModel
+            software = asset.software
+            
+            let hasAny = asset.cameraMake != nil || asset.cameraModel != nil || asset.lensMake != nil || asset.lensModel != nil || asset.software != nil
+            
+            guard !hasAny, let phAsset = asset.phAsset else {
+                isLoadingMetadata = false
+                return
+            }
+            
+            isLoadingMetadata = true
+            
             let metadata = await PhotoLibraryService.fetchCameraMetadata(for: phAsset)
-            cameraMake = metadata.cameraMake
-            cameraModel = metadata.cameraModel
-            lensMake = metadata.lensMake
-            lensModel = metadata.lensModel
-            software = metadata.software
-            isLoadingMetadata = false
+            
+            await MainActor.run {
+                cameraMake = metadata.cameraMake
+                cameraModel = metadata.cameraModel
+                lensMake = metadata.lensMake
+                lensModel = metadata.lensModel
+                software = metadata.software
+                isLoadingMetadata = false
+            }
         }
     }
 }
