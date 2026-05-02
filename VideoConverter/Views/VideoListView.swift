@@ -15,6 +15,9 @@ struct VideoListView: View {
     @State private var resultJob: ConversionJob?        // completed job overlay
     @State private var fixDateItem: FixDateItem?        // fix-date swipe action
     @State private var showRefreshConfirmation = false  // refresh toast
+    @State private var showRefreshAlert = false          // refresh confirmation dialog
+    @State private var dragOffset: CGFloat = 0
+    private let refreshThreshold: CGFloat = 80
 
     var body: some View {
         @Bindable var conversionVM = conversionVM
@@ -83,8 +86,7 @@ struct VideoListView: View {
         }
         .task { await listVM.load() }
         .refreshable {
-            await listVM.refresh()
-            showRefreshConfirmation = true
+            showRefreshAlert = true
         }
         .overlay(alignment: .top) {
             if showRefreshConfirmation {
@@ -99,6 +101,19 @@ struct VideoListView: View {
             }
         }
         .animation(.spring(duration: 0.35), value: showRefreshConfirmation)
+        .alert("Refresh Library", isPresented: $showRefreshAlert) {
+            Button("Refresh") {
+                Task {
+                    await listVM.refresh()
+                    showRefreshConfirmation = true
+                }
+            }
+            Button("Cancel", role: .cancel) {
+                showRefreshAlert = false
+            }
+        } message: {
+            Text("Scan your photo library for new videos?")
+        }
     }
 
     // MARK: - Content
